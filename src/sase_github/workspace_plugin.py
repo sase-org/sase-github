@@ -27,7 +27,7 @@ class GitHubWorkspacePlugin:
     def ws_get_workflow_metadata(self) -> WorkflowMetadata | None:
         return WorkflowMetadata(
             workflow_type="gh",
-            ref_pattern=r"(?:^|(?<=\s))#gh(?::([a-zA-Z0-9_./-]+)|\(([^)]+)\))",
+            ref_pattern=r"(?:^|(?<=\s))#gh(?:[:/]([a-zA-Z0-9_./-]+)|\(([^)]+)\))",
             display_name="GitHub",
             pre_allocated_env_prefix="SASE_GH",
             vcs_family="git",
