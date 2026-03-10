@@ -38,7 +38,12 @@ def main(
         workspace_num = get_first_available_axe_workspace(project_file)
         workspace_dir = ensure_git_clone(resolved.primary_workspace_dir, workspace_num)
 
-    pid = os.getpid()
+    # Use the parent process PID, not our own.  This setup step runs as a
+    # short-lived subprocess (via ``subprocess.run``), so ``os.getpid()``
+    # would die immediately after setup.  ``stale_running_cleanup`` would
+    # then incorrectly remove the RUNNING entry while the real workflow
+    # (the parent process) is still alive.
+    pid = os.getppid()
     workflow_name = workflow_label or f"gh-{gh_ref}"
 
     # Skip claiming when pre-allocated — the launcher already claimed the workspace
