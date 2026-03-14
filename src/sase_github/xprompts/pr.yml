@@ -46,25 +46,34 @@ steps:
         exit 0
       fi
 
+      # Push the agent's commits before creating the PR.
+      # The create_branch pre-step pushes the branch before the agent runs,
+      # so the remote is stale. gh pr create's auto-push is unreliable in
+      # non-interactive subprocess mode, so we push explicitly.
+      git push origin "$BRANCH" 2>&1 || true
+
       # Get PR title from first commit
       PR_TITLE=$(git log --format='%s' "origin/$DEFAULT_BRANCH".."$BRANCH" 2>/dev/null | tail -1)
       if [ -z "$PR_TITLE" ]; then
         PR_TITLE="Agent changes on branch $BRANCH"
       fi
 
-      PR_URL=$(gh pr create \
+      PR_OUTPUT=$(gh pr create \
         --base "$DEFAULT_BRANCH" \
         --head "$BRANCH" \
         --title "$PR_TITLE" \
         --body "Automated PR from sase." 2>&1) || true
 
-      if echo "$PR_URL" | grep -q "^http"; then
+      # Extract the URL from gh output (may contain push progress on other lines)
+      PR_URL=$(echo "$PR_OUTPUT" | grep -o 'https://[^ ]*' | head -1)
+
+      if [ -n "$PR_URL" ]; then
         echo "pr_url=$PR_URL"
         echo "success=true"
       else
         echo "pr_url="
         echo "success=false"
-        echo "Error: $PR_URL" >&2
+        echo "error=$PR_OUTPUT"
       fi
     output: { pr_url: line, success: bool }
 
