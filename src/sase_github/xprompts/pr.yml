@@ -91,7 +91,8 @@ steps:
           update_changespec_cl_atomic(project_file, cl_name, pr_url)
           print("updated=true")
           print(f"pr_url={pr_url}")
+          print(f"meta_new_pr={pr_url}")
       else:
           print("updated=false")
           print(f"pr_url={pr_url}")
-    output: { updated: bool, pr_url: line }
+    output: { updated: bool, pr_url: line, meta_new_pr: line }
