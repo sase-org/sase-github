@@ -321,10 +321,10 @@ class GitHubWorkspacePlugin:
 
 def _clone_gh_repo(user: str, project: str, target_dir: str) -> None:
     """Clone a GitHub repo to the target directory."""
-    from sase_github.config import get_github_username
+    from sase_github.config import get_github_orgs
 
-    gh_user = get_github_username()
-    if gh_user and gh_user == user:
+    gh_orgs = get_github_orgs()
+    if user in gh_orgs:
         url = f"git@github.com:{user}/{project}.git"
     else:
         url = f"https://github.com/{user}/{project}.git"
@@ -453,14 +453,14 @@ def _submit_via_pr_merge(
     console: object | None,
 ) -> tuple[bool, str | None]:
     """Submit by merging the PR via ``gh pr merge``."""
-    from sase_github.config import get_github_username
+    from sase_github.config import get_github_orgs
 
-    username = get_github_username()
-    if not username:
+    gh_orgs = get_github_orgs()
+    if not gh_orgs:
         return (
             False,
-            "Cannot submit GitHub PR: 'github_username' is not configured "
-            "in sase.yml. Add 'github_username: <your_username>' to "
+            "Cannot submit GitHub PR: 'github_orgs' is not configured "
+            "in sase.yml. Add 'github_orgs: [your_username]' to "
             "~/.config/sase/sase.yml",
         )
 
