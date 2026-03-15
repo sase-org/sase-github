@@ -1,11 +1,46 @@
 """Create changespec step for the #pr xprompt workflow."""
 
 import os
+import re
+import subprocess
 
 from sase.workspace_utils import get_default_branch
 from sase.vcs_provider import get_vcs_provider
 from sase.workflow_utils import get_project_file_path
 from sase.workspace_changespec import create_changespec_for_workflow
+
+
+def _rename_branch(old_name: str, new_name: str) -> bool:
+    """Rename the current git branch and update the remote.
+
+    Returns True on success.
+    """
+    # Rename local branch
+    result = subprocess.run(
+        ["git", "branch", "-m", old_name, new_name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return False
+
+    # Delete old remote branch (best-effort)
+    subprocess.run(
+        ["git", "push", "origin", "--delete", old_name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    # Push new branch and set upstream
+    result = subprocess.run(
+        ["git", "push", "-u", "origin", new_name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def main(*, name: str, prompt: str, response: str) -> None:
@@ -21,6 +56,7 @@ def main(*, name: str, prompt: str, response: str) -> None:
         print("cl_name=")
         print("project_file=")
         print("default_branch=")
+        print(f"branch_name={name}")
         return
 
     project_file = get_project_file_path(project_name)
@@ -44,10 +80,20 @@ def main(*, name: str, prompt: str, response: str) -> None:
     )
 
     if result:
+        # Extract the _<N> suffix from the suffixed ChangeSpec name and
+        # rename the git branch to include it (e.g. banana -> banana_1).
+        branch_name = name
+        match = re.search(r"_(\d+)$", result)
+        if match:
+            new_branch = f"{name}_{match.group(1)}"
+            if _rename_branch(name, new_branch):
+                branch_name = new_branch
+
         print("success=true")
         print(f"cl_name={result}")
         print(f"project_file={project_file}")
         print(f"default_branch={default_branch}")
+        print(f"branch_name={branch_name}")
         print(f"meta_changespec={result}")
         print("error=")
     else:
@@ -55,4 +101,5 @@ def main(*, name: str, prompt: str, response: str) -> None:
         print("cl_name=")
         print(f"project_file={project_file}")
         print(f"default_branch={default_branch}")
+        print(f"branch_name={name}")
         print("error=No new commits found")

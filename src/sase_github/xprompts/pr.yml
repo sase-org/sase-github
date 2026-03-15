@@ -30,12 +30,13 @@ steps:
       cl_name: word
       project_file: path
       default_branch: word
+      branch_name: word
 
   - name: create_pr
     hidden: true
     if: "{{ create_changespec.success | default(false) }}"
     bash: |
-      BRANCH="{{ create_branch.branch_name }}"
+      BRANCH="{{ create_changespec.branch_name | default(create_branch.branch_name) }}"
       DEFAULT_BRANCH="{{ create_changespec.default_branch }}"
 
       # Check for existing PR first

@@ -64,15 +64,24 @@ steps:
       # CL tip rather than the default branch.  Try checkout_target first
       # (works for default-branch refs like origin/main), then fall back to
       # ChangeSpec name -> branch name conversion.
+      is_changespec = checkout_target == f"origin/{gh_ref}"
       ok, err = provider.checkout(checkout_target, os.getcwd())
       if not ok:
-          resolved = provider.resolve_revision(
-              gh_ref, project_name, os.getcwd()
-          )
-          ok, err = provider.checkout(resolved, os.getcwd())
+          if is_changespec:
+              # ChangeSpec ref — resolve name to branch name
+              resolved = provider.resolve_revision(
+                  gh_ref, project_name, os.getcwd()
+              )
+              ok, err = provider.checkout(resolved, os.getcwd())
+          else:
+              # Project/repo ref — try common default branch names
+              for fallback in ["master", "main"]:
+                  ok, err = provider.checkout(fallback, os.getcwd())
+                  if ok:
+                      break
           if not ok:
               print(
-                  f"Warning: checkout of '{resolved}' failed: {err}",
+                  f"Warning: checkout failed: {err}",
                   file=sys.stderr,
               )
 
