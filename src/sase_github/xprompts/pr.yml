@@ -53,17 +53,24 @@ steps:
       # non-interactive subprocess mode, so we push explicitly.
       git push origin "$BRANCH" 2>&1 || true
 
-      # Get PR title from first commit
-      PR_TITLE=$(git log --format='%s' "origin/$DEFAULT_BRANCH".."$BRANCH" 2>/dev/null | tail -1)
+      # Get PR title and body from first commit on the branch
+      FIRST_COMMIT=$(git log --format='%H' "origin/$DEFAULT_BRANCH".."$BRANCH" 2>/dev/null | tail -1)
+      if [ -n "$FIRST_COMMIT" ]; then
+        PR_TITLE=$(git log --format='%s' -1 "$FIRST_COMMIT")
+        PR_BODY=$(git log --format='%b' -1 "$FIRST_COMMIT" | sed -e :a -e '/^[[:space:]]*$/d;N;ba')
+      fi
       if [ -z "$PR_TITLE" ]; then
         PR_TITLE="Agent changes on branch $BRANCH"
+      fi
+      if [ -z "$PR_BODY" ]; then
+        PR_BODY="Automated PR from sase."
       fi
 
       PR_OUTPUT=$(gh pr create \
         --base "$DEFAULT_BRANCH" \
         --head "$BRANCH" \
         --title "$PR_TITLE" \
-        --body "Automated PR from sase." 2>&1) || true
+        --body "$PR_BODY" 2>&1) || true
 
       # Extract the URL from gh output (may contain push progress on other lines)
       PR_URL=$(echo "$PR_OUTPUT" | grep -o 'https://[^ ]*' | head -1)
