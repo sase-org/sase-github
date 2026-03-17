@@ -5,7 +5,7 @@ input:
 steps:
   - name: create_branch
     bash: |
-      set -euo pipefail
+      set -eu
       BRANCH="{{ name }}"
       git checkout -b "$BRANCH" 2>&1
       git push -u origin "$BRANCH" 2>&1
