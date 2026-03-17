@@ -5,9 +5,15 @@ input:
 steps:
   - name: create_branch
     bash: |
+      set -euo pipefail
       BRANCH="{{ name }}"
       git checkout -b "$BRANCH" 2>&1
       git push -u origin "$BRANCH" 2>&1
+      CURRENT_BRANCH=$(git branch --show-current)
+      if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
+        echo "error=Expected current branch '$BRANCH' but found '$CURRENT_BRANCH'" >&2
+        exit 1
+      fi
       echo "branch_name=$BRANCH"
       echo "meta_changespec=$BRANCH"
     output:
