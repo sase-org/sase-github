@@ -38,6 +38,37 @@ steps:
       default_branch: word
       branch_name: word
 
+  - name: agent_info
+    hidden: true
+    python: |
+      import json
+      import os
+      from pathlib import Path
+
+      agent_name = ""
+      model = ""
+      llm_provider = ""
+
+      artifacts_dir = os.environ.get("SASE_ARTIFACTS_DIR", "")
+      if artifacts_dir:
+          meta_path = Path(artifacts_dir) / "agent_meta.json"
+          try:
+              with open(meta_path, encoding="utf-8") as f:
+                  meta = json.load(f)
+              agent_name = meta.get("name", "")
+              model = meta.get("model", "")
+              llm_provider = meta.get("llm_provider", "")
+          except (FileNotFoundError, json.JSONDecodeError, OSError):
+              pass
+
+      print(f"agent_name={agent_name}")
+      print(f"model={model}")
+      print(f"llm_provider={llm_provider}")
+    output:
+      agent_name: word
+      model: word
+      llm_provider: word
+
   - name: create_pr
     hidden: true
     if: "{{ create_changespec.success | default(false) }}"
@@ -70,6 +101,22 @@ steps:
       fi
       if [ -z "$PR_BODY" ]; then
         PR_BODY="Automated PR from sase."
+      fi
+
+      # Append agent metadata footer
+      AGENT_NAME="{{ agent_info.agent_name | default('') }}"
+      MODEL="{{ agent_info.model | default('') }}"
+      LLM_PROVIDER="{{ agent_info.llm_provider | default('') }}"
+      FOOTER=""
+      if [ -n "$LLM_PROVIDER" ] && [ -n "$MODEL" ]; then
+        FOOTER="Model: ${LLM_PROVIDER}/${MODEL}"
+      fi
+      if [ -n "$AGENT_NAME" ]; then
+        [ -n "$FOOTER" ] && FOOTER=$(printf '%s\n' "$FOOTER")
+        FOOTER="${FOOTER}Agent: ${AGENT_NAME}"
+      fi
+      if [ -n "$FOOTER" ]; then
+        PR_BODY=$(printf '%s\n\n---\n%s' "$PR_BODY" "$FOOTER")
       fi
 
       PR_OUTPUT=$(gh pr create \
