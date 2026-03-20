@@ -1,4 +1,4 @@
-wraps_all: true
+tags: vcs
 
 input:
   - name: gh_ref
