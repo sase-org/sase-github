@@ -38,9 +38,7 @@ class GitHubWorkspacePlugin:
     def ws_detect_workflow_type(self, project_file: str) -> str | None:
         """Return ``'gh'`` if the project is GitHub-hosted, else ``None``."""
         workspace_dir = parse_workspace_dir(project_file)
-        if not workspace_dir or not os.path.isdir(
-            os.path.join(workspace_dir, ".git")
-        ):
+        if not workspace_dir or not os.path.isdir(os.path.join(workspace_dir, ".git")):
             return None
 
         from sase.workspace_utils import parse_bare_repo_dir
@@ -75,9 +73,7 @@ class GitHubWorkspacePlugin:
         return None
 
     @hookimpl
-    def ws_resolve_ref(
-        self, ref: str, workflow_type: str
-    ) -> ResolvedRef | None:
+    def ws_resolve_ref(self, ref: str, workflow_type: str) -> ResolvedRef | None:
         """Resolve a ``#gh`` reference to workspace and branch information."""
         if workflow_type != "gh":
             return None
@@ -90,9 +86,7 @@ class GitHubWorkspacePlugin:
         )
 
     @hookimpl
-    def ws_extract_change_identifier(
-        self, cl_url: str
-    ) -> tuple[str, str] | None:
+    def ws_extract_change_identifier(self, cl_url: str) -> tuple[str, str] | None:
         """Extract PR number from a GitHub PR URL."""
         match = re.match(r"https?://github\.com/.+/pull/(\d+)", cl_url)
         if match:
@@ -107,7 +101,7 @@ class GitHubWorkspacePlugin:
         if vcs_type != "git":
             return None
         return (
-            f'state=$(gh pr view {identifier} --json state -q \'.state\' 2>/dev/null)\n'
+            f"state=$(gh pr view {identifier} --json state -q '.state' 2>/dev/null)\n"
             f'[ "$state" = "MERGED" ]'
         )
 
@@ -144,9 +138,7 @@ class GitHubWorkspacePlugin:
     ) -> object | None:
         if self.ws_detect_workflow_type(project_file=project_file) != "gh":
             return None
-        return _prepare_mail_git(
-            changespec_name, project_basename, target_dir, console
-        )
+        return _prepare_mail_git(changespec_name, project_basename, target_dir, console)
 
     @hookimpl
     def ws_format_commit_description(
@@ -210,11 +202,7 @@ class GitHubWorkspacePlugin:
             return (False, f"ChangeSpec '{changespec_name}' not found")
 
         log_fn = (
-            (
-                lambda msg: rich_console.print(
-                    f"[cyan]{escape_markup(msg)}[/cyan]"
-                )
-            )
+            (lambda msg: rich_console.print(f"[cyan]{escape_markup(msg)}[/cyan]"))
             if rich_console
             else None
         )
@@ -247,16 +235,12 @@ class GitHubWorkspacePlugin:
         pid = os.getpid()
 
         try:
-            ws_dir, _ = get_workspace_directory_for_num(
-                workspace_num, project_basename
-            )
+            ws_dir, _ = get_workspace_directory_for_num(workspace_num, project_basename)
         except RuntimeError as e:
             return (False, f"Failed to get workspace directory: {e}")
 
         if rich_console:
-            rich_console.print(
-                f"[cyan]Claiming workspace #{workspace_num}[/cyan]"
-            )
+            rich_console.print(f"[cyan]Claiming workspace #{workspace_num}[/cyan]")
 
         if not claim_workspace(
             changespec_file,
@@ -295,13 +279,10 @@ class GitHubWorkspacePlugin:
 
             has_pr = _check_existing_pr(ws_dir)
             if has_pr:
-                return _submit_via_pr_merge(
-                    changespec, ws_dir, rich_console
-                )
+                return _submit_via_pr_merge(changespec, ws_dir, rich_console)
             return (
                 False,
-                "GitHub project has no PR for this branch. "
-                "Create a PR first with #pr.",
+                "GitHub project has no PR for this branch. Create a PR first with #pr.",
             )
         finally:
             release_workspace(
@@ -311,9 +292,7 @@ class GitHubWorkspacePlugin:
                 changespec_name,
             )
             if rich_console:
-                rich_console.print(
-                    f"[cyan]Released workspace #{workspace_num}[/cyan]"
-                )
+                rich_console.print(f"[cyan]Released workspace #{workspace_num}[/cyan]")
 
 
 # ── Private helpers ─────────────────────────────────────────────────
@@ -368,9 +347,7 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
     if "/" in gh_ref:
         parts = gh_ref.strip("/").split("/")
         if len(parts) != 2:
-            raise ValueError(
-                f"Invalid repo path '{gh_ref}': expected 'user/project'"
-            )
+            raise ValueError(f"Invalid repo path '{gh_ref}': expected 'user/project'")
         user, project = parts
         primary_workspace_dir = (
             str(Path.home() / "projects" / "github" / user / project) + "/"

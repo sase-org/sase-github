@@ -14,7 +14,9 @@ from sase_github.workspace_plugin import (
 
 
 class TestResolveGhRef:
-    @patch("sase_github.workspace_plugin.get_default_branch", return_value="origin/main")
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
     @patch("sase_github.workspace_plugin.set_workspace_dir", return_value=True)
     @patch("sase_github.workspace_plugin.parse_workspace_dir", return_value=None)
     @patch("sase_github.workspace_plugin.os.path.isdir", return_value=True)
@@ -31,7 +33,9 @@ class TestResolveGhRef:
         assert "alice/myrepo" in result.primary_workspace_dir
         mock_set.assert_called_once()
 
-    @patch("sase_github.workspace_plugin.get_default_branch", return_value="origin/main")
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
     @patch("sase_github.workspace_plugin.set_workspace_dir", return_value=True)
     @patch("sase_github.workspace_plugin.parse_workspace_dir")
     def test_repo_path_conflict(
@@ -44,7 +48,9 @@ class TestResolveGhRef:
         with pytest.raises(ValueError, match="WORKSPACE_DIR conflict"):
             resolve_gh_ref("alice/myrepo")
 
-    @patch("sase_github.workspace_plugin.get_default_branch", return_value="origin/main")
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
     def test_project_shorthand(self, mock_branch: MagicMock) -> None:
         with tempfile.TemporaryDirectory() as d:
             with patch("sase_github.workspace_plugin.Path.home", return_value=Path(d)):
@@ -59,7 +65,9 @@ class TestResolveGhRef:
                 assert result.primary_workspace_dir == "/work/myproj/"
                 assert result.checkout_target == "origin/main"
 
-    @patch("sase_github.workspace_plugin.get_default_branch", return_value="origin/main")
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
     @patch("sase.ace.changespec.find_all_changespecs")
     def test_changespec_name(
         self,

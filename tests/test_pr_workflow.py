@@ -21,7 +21,11 @@ def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 def _extract_create_branch_script() -> str:
     """Extract the bash body for the create_branch step from pr.yml."""
     workflow_path = (
-        Path(__file__).resolve().parents[1] / "src" / "sase_github" / "xprompts" / "pr.yml"
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "sase_github"
+        / "xprompts"
+        / "pr.yml"
     )
     text = workflow_path.read_text(encoding="utf-8")
     start_marker = "  - name: create_branch\n    bash: |\n"
@@ -48,19 +52,22 @@ def _init_repo(path: Path) -> None:
     _run(["git", "commit", "-m", "chore: init"], cwd=path)
 
 
-def test_create_branch_step_fails_when_branch_already_exists(tmp_path: Path) -> None:
-    """create_branch must fail if requested branch already exists."""
+def test_create_branch_step_checks_out_existing_branch(tmp_path: Path) -> None:
+    """create_branch should check out an existing branch instead of failing."""
     _init_repo(tmp_path)
-    initial_branch = _run(["git", "branch", "--show-current"], cwd=tmp_path).stdout.strip()
     _run(["git", "checkout", "-b", "existing"], cwd=tmp_path)
-    _run(["git", "checkout", initial_branch], cwd=tmp_path)
+    _run(["git", "checkout", "-"], cwd=tmp_path)
 
+    # Remove the push line so we can test branch checkout in isolation
     script = _extract_create_branch_script().replace("{{ name }}", "existing")
+    script = "\n".join(line for line in script.splitlines() if "git push" not in line)
     result = _run(["bash", "-c", script], cwd=tmp_path)
 
-    assert result.returncode != 0
-    current_branch = _run(["git", "branch", "--show-current"], cwd=tmp_path).stdout.strip()
-    assert current_branch == initial_branch
+    assert result.returncode == 0
+    current_branch = _run(
+        ["git", "branch", "--show-current"], cwd=tmp_path
+    ).stdout.strip()
+    assert current_branch == "existing"
 
 
 def test_create_branch_step_fails_when_push_fails(tmp_path: Path) -> None:
