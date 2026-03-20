@@ -9,7 +9,11 @@ steps:
     bash: |
       set -eu
       BRANCH="{{ name }}"
-      git checkout -b "$BRANCH" 2>&1 || git checkout "$BRANCH" 2>&1
+      git fetch origin 2>&1 || true
+      # Prefer checkout (auto-tracks remote if it exists) over checkout -b
+      git checkout "$BRANCH" 2>&1 || git checkout -b "$BRANCH" 2>&1
+      # Sync with remote if the branch already exists there
+      git pull origin "$BRANCH" 2>&1 || true
       git push -u origin "$BRANCH" 2>&1
       CURRENT_BRANCH=$(git branch --show-current)
       if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
