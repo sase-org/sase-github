@@ -112,8 +112,11 @@ steps:
         FOOTER="Model: ${LLM_PROVIDER}/${MODEL}"
       fi
       if [ -n "$AGENT_NAME" ]; then
-        [ -n "$FOOTER" ] && FOOTER=$(printf '%s\n' "$FOOTER")
-        FOOTER="${FOOTER}Agent: ${AGENT_NAME}"
+        if [ -n "$FOOTER" ]; then
+          FOOTER=$(printf '%s\nAgent: %s' "$FOOTER" "$AGENT_NAME")
+        else
+          FOOTER="Agent: ${AGENT_NAME}"
+        fi
       fi
       if [ -n "$FOOTER" ]; then
         PR_BODY=$(printf '%s\n\n---\n%s' "$PR_BODY" "$FOOTER")
