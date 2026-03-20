@@ -1,5 +1,5 @@
 wraps_all: true
-tags: vcs
+tags: vcs rollover
 
 input:
   - name: gh_ref
