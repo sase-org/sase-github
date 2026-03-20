@@ -109,13 +109,13 @@ steps:
       LLM_PROVIDER="{{ agent_info.llm_provider | default('') }}"
       FOOTER=""
       if [ -n "$LLM_PROVIDER" ] && [ -n "$MODEL" ]; then
-        FOOTER="Model: ${LLM_PROVIDER}/${MODEL}"
+        FOOTER="**Model:** \`${LLM_PROVIDER}/${MODEL}\`"
       fi
       if [ -n "$AGENT_NAME" ]; then
         if [ -n "$FOOTER" ]; then
-          FOOTER=$(printf '%s\nAgent: %s' "$FOOTER" "$AGENT_NAME")
+          FOOTER=$(printf '%s\n**Agent:** `%s`' "$FOOTER" "$AGENT_NAME")
         else
-          FOOTER="Agent: ${AGENT_NAME}"
+          FOOTER="**Agent:** \`${AGENT_NAME}\`"
         fi
       fi
       if [ -n "$FOOTER" ]; then
