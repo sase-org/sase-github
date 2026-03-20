@@ -9,7 +9,7 @@ steps:
     bash: |
       set -eu
       BRANCH="{{ name }}"
-      git checkout -b "$BRANCH" 2>&1
+      git checkout -b "$BRANCH" 2>&1 || git checkout "$BRANCH" 2>&1
       git push -u origin "$BRANCH" 2>&1
       CURRENT_BRANCH=$(git branch --show-current)
       if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
