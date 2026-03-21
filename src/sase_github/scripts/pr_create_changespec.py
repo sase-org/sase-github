@@ -4,10 +4,10 @@ import os
 import re
 import subprocess
 
-from sase.workspace_utils import get_default_branch
+from sase.workspace_provider.utils import get_default_branch
 from sase.vcs_provider import get_vcs_provider
 from sase.workflow_utils import get_project_file_path
-from sase.workspace_changespec import create_changespec_for_workflow
+from sase.workspace_provider.changespec import create_changespec_for_workflow
 
 
 def _rename_branch(old_name: str, new_name: str) -> bool:

@@ -3,7 +3,7 @@
 import os
 
 from sase.workspace_provider import resolve_ref
-from sase.workspace_utils import ensure_git_clone
+from sase.workspace_provider.utils import ensure_git_clone
 from sase.running_field import (
     claim_workspace,
     get_first_available_axe_workspace,

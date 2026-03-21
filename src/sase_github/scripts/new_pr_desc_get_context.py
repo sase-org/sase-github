@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 
 from sase.ace.changespec import find_all_changespecs
-from sase.workspace_utils import get_default_branch, parse_workspace_dir
+from sase.workspace_provider.utils import get_default_branch, parse_workspace_dir
 
 
 def main(*, name: str) -> None:

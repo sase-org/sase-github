@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 from sase.workspace_provider import ResolvedRef, WorkflowMetadata, hookimpl
-from sase.workspace_utils import (
+from sase.workspace_provider.utils import (
     get_default_branch,
     parse_workspace_dir,
     set_workspace_dir,
@@ -41,7 +41,7 @@ class GitHubWorkspacePlugin:
         if not workspace_dir or not os.path.isdir(os.path.join(workspace_dir, ".git")):
             return None
 
-        from sase.workspace_utils import parse_bare_repo_dir
+        from sase.workspace_provider.utils import parse_bare_repo_dir
 
         if parse_bare_repo_dir(project_file):
             return None  # bare-git plugin handles this
@@ -122,7 +122,7 @@ class GitHubWorkspacePlugin:
     ) -> str | None:
         if workflow_type != "gh":
             return None
-        from sase.workspace_utils import ensure_git_clone
+        from sase.workspace_provider.utils import ensure_git_clone
 
         return ensure_git_clone(primary_workspace_dir, workspace_num)
 
@@ -472,7 +472,7 @@ def _submit_via_pr_merge(
         if isinstance(console, RichConsole):
             console.print("[green]PR merged successfully[/green]")
 
-    from sase.submission_utils import finalize_submission
+    from sase.workspace_provider.submission_utils import finalize_submission
 
     return finalize_submission(changespec.file_path, changespec.name, console)  # type: ignore[arg-type]
 
