@@ -1,0 +1,19 @@
+tags: append_to_commit_and_propose
+
+steps:
+  - name: check_branch
+    bash: |
+      branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+      if [ "$branch" = "master" ] || [ "$branch" = "main" ]; then
+        echo "is_default=true"
+      else
+        echo "is_default=false"
+      fi
+    output: {is_default: bool}
+
+  - name: content
+    if: "{{ not check_branch.is_default }}"
+    prompt_part: |
+      ### Context Files Related to this PR
+      + #pr_diff : Contains a diff of the changes made by the current PR.
+      + #x(pr_desc.txt, gh pr view --json body --jq '.body' 2>/dev/null || echo 'No PR description available.') : Contains the current PR's description.

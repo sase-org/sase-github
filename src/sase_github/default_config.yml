@@ -3,9 +3,3 @@ xprompts:
     tags: diff_file
     content: |
       #x(pr_changes.diff, git diff origin/master)
-  prdd:
-    tags: append_to_commit_and_propose
-    content: |
-      ### Context Files Related to this PR
-      + #pr_diff : Contains a diff of the changes made by the current PR.
-      + #x(pr_desc.txt, gh pr view --json body --jq '.body' 2>/dev/null || echo 'No PR description available.') : Contains the current PR's description.
