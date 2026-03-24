@@ -49,6 +49,7 @@ Requires `sase>=0.1.0` as a dependency (installed automatically).
 | -------------- | ---------------------------------------------------------------------------------- |
 | `#gh`          | GitHub workflow orchestration — resolves refs, claims workspaces, manages branches |
 | `#new_pr_desc` | AI-generated PR descriptions from commit diffs                                     |
+| `#prdd`        | Injects PR diff and description as context (auto-appended on feature branches)     |
 
 ## How It Works
 
@@ -94,7 +95,8 @@ src/sase_github/
 │   └── new_pr_desc_get_context.py  # Context retrieval for PR description generation
 └── xprompts/
     ├── gh.yml              # GitHub workflow orchestration
-    └── new_pr_desc.yml     # PR description generation
+    ├── new_pr_desc.yml     # PR description generation
+    └── prdd.yml            # PR description detail injection
 ```
 
 ## License
