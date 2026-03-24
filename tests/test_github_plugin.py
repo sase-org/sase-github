@@ -337,7 +337,7 @@ def test_vcs_create_commit_specific_files(
 
     add_call = mock_run.call_args_list[0]
     cmd = add_call[0][0]
-    assert cmd == ["git", "add", "a.py", "b.py"]
+    assert cmd == ["git", "add", "--", "a.py", "b.py"]
 
 
 @patch(_MOCK_TARGET)
