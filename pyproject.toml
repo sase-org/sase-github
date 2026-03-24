@@ -25,6 +25,9 @@ github = "sase_github.plugin:GitHubPlugin"
 [project.entry-points."sase_workspace"]
 github = "sase_github.workspace_plugin:GitHubWorkspacePlugin"
 
+[project.entry-points."sase_config"]
+sase_github = "sase_github"
+
 [project.entry-points."sase_xprompts"]
 sase_github = "sase_github"
 
