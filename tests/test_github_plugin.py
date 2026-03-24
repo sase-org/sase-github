@@ -293,6 +293,119 @@ def test_direct_mail_push_existing_pr(mock_run: MagicMock) -> None:
     assert mock_run.call_count == 2
 
 
+# === Tests for commit dispatch hooks ===
+
+
+@patch(_MOCK_TARGET)
+def test_vcs_create_commit_success(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """All 3 git commands (add, commit, push) succeed."""
+    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    ok, err = github_provider.create_commit(
+        {"message": "fix: bug", "files": ["a.py"]}, "/workspace"
+    )
+
+    assert ok is True
+    assert err is None
+    assert mock_run.call_count == 3
+
+
+@patch(_MOCK_TARGET)
+def test_vcs_create_commit_add_fails(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """Returns error when git add fails."""
+    mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="pathspec error")
+    ok, err = github_provider.create_commit(
+        {"message": "test", "files": ["missing.py"]}, "/ws"
+    )
+
+    assert ok is False
+    assert isinstance(err, str)
+
+
+@patch(_MOCK_TARGET)
+def test_vcs_create_commit_specific_files(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """Specific files list is passed to git add."""
+    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    github_provider.create_commit(
+        {"message": "fix: bug", "files": ["a.py", "b.py"]}, "/ws"
+    )
+
+    add_call = mock_run.call_args_list[0]
+    cmd = add_call[0][0]
+    assert cmd == ["git", "add", "a.py", "b.py"]
+
+
+@patch(_MOCK_TARGET)
+def test_vcs_create_proposal_delegates_to_commit(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """create_proposal delegates to create_commit."""
+    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    ok, err = github_provider.create_proposal({"message": "propose: change"}, "/ws")
+
+    assert ok is True
+    # Same sequence as create_commit: add, commit, push
+    assert mock_run.call_count == 3
+
+
+@patch(_MOCK_TARGET)
+def test_vcs_create_pull_request_success(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """Full PR flow: checkout -b, add, commit, push, gh pr create."""
+    mock_run.side_effect = [
+        MagicMock(returncode=0, stdout="", stderr=""),  # checkout -b
+        MagicMock(returncode=0, stdout="", stderr=""),  # add
+        MagicMock(returncode=0, stdout="", stderr=""),  # commit
+        MagicMock(returncode=0, stdout="", stderr=""),  # push -u
+        MagicMock(
+            returncode=0,
+            stdout="https://github.com/user/repo/pull/99\n",
+            stderr="",
+        ),  # gh pr create
+    ]
+    ok, result = github_provider.create_pull_request(
+        {"name": "feat-x", "message": "add feature", "files": []}, "/ws"
+    )
+
+    assert ok is True
+    assert result == "https://github.com/user/repo/pull/99"
+    assert mock_run.call_count == 5
+    # Verify branch creation
+    assert mock_run.call_args_list[0][0][0] == ["git", "checkout", "-b", "feat-x"]
+    # Verify gh pr create uses message for title/body
+    pr_cmd = mock_run.call_args_list[4][0][0]
+    assert pr_cmd[:3] == ["gh", "pr", "create"]
+
+
+@patch(_MOCK_TARGET)
+def test_vcs_create_pull_request_pr_create_fails(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """Returns error when gh pr create fails."""
+    mock_run.side_effect = [
+        MagicMock(returncode=0, stdout="", stderr=""),  # checkout -b
+        MagicMock(returncode=0, stdout="", stderr=""),  # add
+        MagicMock(returncode=0, stdout="", stderr=""),  # commit
+        MagicMock(returncode=0, stdout="", stderr=""),  # push -u
+        MagicMock(returncode=1, stdout="", stderr="error creating PR"),  # gh pr create
+    ]
+    ok, err = github_provider.create_pull_request(
+        {"name": "feat-x", "message": "test", "files": []}, "/ws"
+    )
+
+    assert ok is False
+    assert isinstance(err, str)
+
+
+# === Direct plugin method tests (commit dispatch) ===
+
+
 @patch(_MOCK_TARGET)
 def test_direct_mail_push_fails(mock_run: MagicMock) -> None:
     """Test GitHubPlugin.vcs_mail when push fails."""
