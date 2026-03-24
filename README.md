@@ -48,7 +48,6 @@ Requires `sase>=0.1.0` as a dependency (installed automatically).
 | XPrompt        | Description                                                                        |
 | -------------- | ---------------------------------------------------------------------------------- |
 | `#gh`          | GitHub workflow orchestration — resolves refs, claims workspaces, manages branches |
-| `#pr`          | Pull request creation — creates branches, runs agents, opens PRs with metadata     |
 | `#new_pr_desc` | AI-generated PR descriptions from commit diffs                                     |
 
 ## How It Works
@@ -92,11 +91,9 @@ src/sase_github/
 ├── config.py                # GitHub config helpers (org/user list)
 ├── scripts/
 │   ├── gh_setup.py                 # Setup step for #gh workflow
-│   ├── pr_create_changespec.py     # ChangeSpec creation for #pr workflow
 │   └── new_pr_desc_get_context.py  # Context retrieval for PR description generation
 └── xprompts/
     ├── gh.yml              # GitHub workflow orchestration
-    ├── pr.yml              # PR creation workflow
     └── new_pr_desc.yml     # PR description generation
 ```
 

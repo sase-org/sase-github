@@ -2,7 +2,7 @@
 
 ## Overview
 GitHub VCS plugin for sase. Provides GitHubPlugin (PR creation, gh CLI integration)
-and GitHub-related xprompts (#gh, #pr, #new_pr_desc).
+and GitHub-related xprompts (#gh, #new_pr_desc).
 
 ## Build & Run
 ```bash
