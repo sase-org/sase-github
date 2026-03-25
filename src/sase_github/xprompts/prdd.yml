@@ -4,15 +4,15 @@ steps:
   - name: check_branch
     bash: |
       branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-      if [ "$branch" = "master" ] || [ "$branch" = "main" ]; then
-        echo "is_default=true"
+      if [ "$branch" = "master" ] || [ "$branch" = "main" ] || [ "$branch" = "" ]; then
+        echo "should_inject_prompt_part=true"
       else
-        echo "is_default=false"
+        echo "should_inject_prompt_part=false"
       fi
-    output: {is_default: bool}
+    output: { should_inject_prompt_part: bool }
 
   - name: content
-    if: "{{ not check_branch.is_default }}"
+    if: "{{ not check_branch.should_inject_prompt_part }}"
     prompt_part: |
       ### Context Files Related to this PR
       + #pr_diff : Contains a diff of the changes made by the current PR.
