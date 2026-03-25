@@ -39,6 +39,19 @@ class GitHubPlugin(GitCommon):
         return None
 
     @hookimpl
+    def vcs_abandon_change(
+        self, cl: str, revision: str, cwd: str
+    ) -> tuple[bool, str | None]:
+        """Close the GitHub PR and delete the remote branch."""
+        out = self._run(["gh", "pr", "close", cl, "--delete-branch"], cwd)
+        if not out.success:
+            # PR may already be closed/merged — treat as success
+            if "already" in out.stderr.lower() or "not found" in out.stderr.lower():
+                return (True, None)
+            return self._to_result(out, "gh pr close")
+        return (True, None)
+
+    @hookimpl
     def vcs_get_change_url(self, cwd: str) -> tuple[bool, str | None]:
         out = self._run(["gh", "pr", "view", "--json", "url", "-q", ".url"], cwd)
         if out.success:

@@ -89,6 +89,79 @@ def test_plugin_commit(mock_run: MagicMock, github_provider: VCSPluginManager) -
     assert error is None
 
 
+# === Tests for abandon_change ===
+
+
+@patch(_MOCK_TARGET)
+def test_plugin_abandon_change_success(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """abandon_change closes the PR and deletes the remote branch."""
+    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+    success, error = github_provider.abandon_change(
+        "https://github.com/user/repo/pull/42", "feature-branch", "/workspace"
+    )
+
+    assert success is True
+    assert error is None
+    assert mock_run.call_args[0][0] == [
+        "gh",
+        "pr",
+        "close",
+        "https://github.com/user/repo/pull/42",
+        "--delete-branch",
+    ]
+
+
+@patch(_MOCK_TARGET)
+def test_plugin_abandon_change_already_closed(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """abandon_change succeeds when PR is already closed."""
+    mock_run.return_value = MagicMock(
+        returncode=1, stdout="", stderr="already closed"
+    )
+    success, error = github_provider.abandon_change(
+        "https://github.com/user/repo/pull/42", "feature-branch", "/workspace"
+    )
+
+    assert success is True
+    assert error is None
+
+
+@patch(_MOCK_TARGET)
+def test_plugin_abandon_change_not_found(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """abandon_change succeeds when PR is not found."""
+    mock_run.return_value = MagicMock(
+        returncode=1, stdout="", stderr="not found"
+    )
+    success, error = github_provider.abandon_change(
+        "https://github.com/user/repo/pull/42", "feature-branch", "/workspace"
+    )
+
+    assert success is True
+    assert error is None
+
+
+@patch(_MOCK_TARGET)
+def test_plugin_abandon_change_failure(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """abandon_change returns error on unexpected failure."""
+    mock_run.return_value = MagicMock(
+        returncode=1, stdout="", stderr="network error"
+    )
+    success, error = github_provider.abandon_change(
+        "https://github.com/user/repo/pull/42", "feature-branch", "/workspace"
+    )
+
+    assert success is False
+    assert error is not None
+    assert "gh pr close failed" in error
+
+
 # === Tests for GitHub-specific operations ===
 
 
@@ -404,6 +477,63 @@ def test_vcs_create_pull_request_pr_create_fails(
 
 
 # === Direct plugin method tests (commit dispatch) ===
+
+
+# === Direct plugin method tests (abandon_change) ===
+
+
+@patch(_MOCK_TARGET)
+def test_direct_abandon_change_success(mock_run: MagicMock) -> None:
+    """Test GitHubPlugin.vcs_abandon_change closes PR successfully."""
+    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+    plugin = GitHubPlugin()
+    success, error = plugin.vcs_abandon_change(
+        "https://github.com/user/repo/pull/42", "feature-branch", "/workspace"
+    )
+
+    assert success is True
+    assert error is None
+    assert mock_run.call_args[0][0] == [
+        "gh",
+        "pr",
+        "close",
+        "https://github.com/user/repo/pull/42",
+        "--delete-branch",
+    ]
+
+
+@patch(_MOCK_TARGET)
+def test_direct_abandon_change_already_closed(mock_run: MagicMock) -> None:
+    """Test GitHubPlugin.vcs_abandon_change when PR is already closed."""
+    mock_run.return_value = MagicMock(
+        returncode=1, stdout="", stderr="already closed"
+    )
+
+    plugin = GitHubPlugin()
+    success, error = plugin.vcs_abandon_change(
+        "https://github.com/user/repo/pull/42", "feature-branch", "/workspace"
+    )
+
+    assert success is True
+    assert error is None
+
+
+@patch(_MOCK_TARGET)
+def test_direct_abandon_change_failure(mock_run: MagicMock) -> None:
+    """Test GitHubPlugin.vcs_abandon_change on unexpected error."""
+    mock_run.return_value = MagicMock(
+        returncode=1, stdout="", stderr="permission denied"
+    )
+
+    plugin = GitHubPlugin()
+    success, error = plugin.vcs_abandon_change(
+        "https://github.com/user/repo/pull/42", "feature-branch", "/workspace"
+    )
+
+    assert success is False
+    assert error is not None
+    assert "gh pr close failed" in error
 
 
 @patch(_MOCK_TARGET)
