@@ -5,14 +5,14 @@ steps:
     bash: |
       branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
       if [ "$branch" = "master" ] || [ "$branch" = "main" ] || [ "$branch" = "" ]; then
-        echo "should_inject_prompt_part=true"
-      else
         echo "should_inject_prompt_part=false"
+      else
+        echo "should_inject_prompt_part=true"
       fi
     output: { should_inject_prompt_part: bool }
 
   - name: content
-    if: "{{ not check_branch.should_inject_prompt_part }}"
+    if: "{{ check_branch.should_inject_prompt_part }}"
     prompt_part: |
       ### Context Files Related to this PR
       + #pr_diff : Contains a diff of the changes made by the current PR.
