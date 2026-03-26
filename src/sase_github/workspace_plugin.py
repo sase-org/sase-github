@@ -277,12 +277,37 @@ class GitHubWorkspacePlugin:
                     f"{escape_markup(default_branch)}...[/cyan]"
                 )
 
+            # Prefer the recorded PR URL/number when available — this is
+            # resilient to branch renames (e.g. suffix strip/append).
+            pr_number = _extract_pr_number(changespec.cl)
+            if pr_number:
+                pr_state = _check_pr_state(pr_number, ws_dir)
+                if pr_state == "OPEN":
+                    return _submit_via_pr_merge(
+                        changespec, ws_dir, rich_console, pr_number=pr_number
+                    )
+                elif pr_state == "CLOSED":
+                    return (
+                        False,
+                        f"PR #{pr_number} (from ChangeSpec CL field) is closed "
+                        "and unmerged. Reopen it or create a new PR with #pr.",
+                    )
+                elif pr_state == "MERGED":
+                    return (
+                        False,
+                        f"PR #{pr_number} (from ChangeSpec CL field) is already "
+                        "merged.",
+                    )
+                # pr_state is None — fall through to branch-based check
+
+            # Fallback: check for a PR on the current branch
             has_pr = _check_existing_pr(ws_dir)
             if has_pr:
                 return _submit_via_pr_merge(changespec, ws_dir, rich_console)
             return (
                 False,
-                "GitHub project has no PR for this branch. Create a PR first with #pr.",
+                "GitHub project has no PR for this branch. "
+                "Create a PR first with #pr.",
             )
         finally:
             release_workspace(
@@ -409,6 +434,31 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
     raise ValueError(f"Cannot resolve gh_ref '{gh_ref}'")
 
 
+def _extract_pr_number(cl_url: str | None) -> str | None:
+    """Extract a PR number from a GitHub PR URL, or return ``None``."""
+    if not cl_url:
+        return None
+    match = re.match(r"https?://github\.com/.+/pull/(\d+)", cl_url)
+    return match.group(1) if match else None
+
+
+def _check_pr_state(pr_number: str, cwd: str) -> str | None:
+    """Return the PR state (``OPEN``, ``CLOSED``, ``MERGED``) or ``None``."""
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "view", pr_number, "--json", "state", "-q", ".state"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip() or None
+    except Exception:
+        pass
+    return None
+
+
 def _check_existing_pr(cwd: str) -> bool:
     """Check if a PR exists for the current branch."""
     try:
@@ -428,6 +478,8 @@ def _submit_via_pr_merge(
     changespec: object,
     ws_dir: str,
     console: object | None,
+    *,
+    pr_number: str | None = None,
 ) -> tuple[bool, str | None]:
     """Submit by merging the PR via ``gh pr merge``."""
     from sase_github.config import get_github_orgs
@@ -448,8 +500,11 @@ def _submit_via_pr_merge(
             console.print("[cyan]Merging PR via gh pr merge...[/cyan]")
 
     try:
+        merge_cmd = ["gh", "pr", "merge", "--merge", "--delete-branch"]
+        if pr_number:
+            merge_cmd.insert(3, pr_number)
         result = subprocess.run(
-            ["gh", "pr", "merge", "--merge", "--delete-branch"],
+            merge_cmd,
             cwd=ws_dir,
             capture_output=True,
             text=True,
@@ -474,7 +529,7 @@ def _submit_via_pr_merge(
 
     from sase.workspace_provider.submission_utils import finalize_submission
 
-    return finalize_submission(changespec.file_path, changespec.name, console)  # type: ignore[arg-type]
+    return finalize_submission(changespec.file_path, changespec.name, console)  # type: ignore[attr-defined, arg-type]
 
 
 def _prepare_mail_git(
