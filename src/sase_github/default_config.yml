@@ -1,5 +1,1 @@
-xprompts:
-  pr_diff:
-    tags: diff_file
-    content: |
-      #x(pr_changes.diff, git diff origin/master)
+xprompts: {}
