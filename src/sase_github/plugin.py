@@ -94,9 +94,10 @@ class GitHubPlugin(GitCommon):
             return (ok, err)
         # GitHub-specific: create PR
         message = payload.get("message", "")
+        body = payload.get("_pr_body", message)
         title = message.split("\n", 1)[0]
         pr_out = self._run(
-            ["gh", "pr", "create", "--title", title, "--body", message], cwd
+            ["gh", "pr", "create", "--title", title, "--body", body], cwd
         )
         if not pr_out.success:
             return self._to_result(pr_out, "gh pr create")
