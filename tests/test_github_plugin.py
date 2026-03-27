@@ -373,15 +373,23 @@ def test_direct_mail_push_existing_pr(mock_run: MagicMock) -> None:
 def test_vcs_create_commit_success(
     mock_run: MagicMock, github_provider: VCSPluginManager
 ) -> None:
-    """All 3 git commands (add, commit, push) succeed."""
-    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-    ok, err = github_provider.create_commit(
+    """All git commands (add, validate, merge, commit, push) succeed."""
+
+    def _side_effect(*args, **kwargs):
+        cmd = args[0]
+        if cmd == ["git", "diff", "--cached", "--quiet"]:
+            return MagicMock(returncode=1, stdout="", stderr="")
+        if cmd[:2] == ["git", "rev-parse"]:
+            return MagicMock(returncode=0, stdout="abc1234\n", stderr="")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    mock_run.side_effect = _side_effect
+    ok, result = github_provider.create_commit(
         {"message": "fix: bug", "files": ["a.py"]}, "/workspace"
     )
 
     assert ok is True
-    assert err is None
-    assert mock_run.call_count == 3
+    assert result == "abc1234"
 
 
 @patch(_MOCK_TARGET)
@@ -413,46 +421,52 @@ def test_vcs_create_commit_specific_files(
     assert cmd == ["git", "add", "--", "a.py", "b.py"]
 
 
-@patch(_MOCK_TARGET)
-def test_vcs_create_proposal_delegates_to_commit(
-    mock_run: MagicMock, github_provider: VCSPluginManager
+@patch("sase.workflows.commit_utils.workspace.clean_workspace")
+@patch("sase.workflows.commit_utils.workspace.save_diff")
+def test_vcs_create_proposal_saves_diff_and_cleans(
+    mock_save_diff: MagicMock,
+    mock_clean: MagicMock,
+    github_provider: VCSPluginManager,
 ) -> None:
-    """create_proposal delegates to create_commit."""
-    mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-    ok, err = github_provider.create_proposal({"message": "propose: change"}, "/ws")
+    """create_proposal saves a diff and cleans the workspace."""
+    mock_save_diff.return_value = "/ws/some.diff"
+    ok, result = github_provider.create_proposal({"message": "propose: change"}, "/ws")
 
     assert ok is True
-    # Same sequence as create_commit: add, commit, push
-    assert mock_run.call_count == 3
+    assert result == "/ws/some.diff"
+    mock_save_diff.assert_called_once()
+    mock_clean.assert_called_once_with("/ws")
 
 
 @patch(_MOCK_TARGET)
 def test_vcs_create_pull_request_success(
     mock_run: MagicMock, github_provider: VCSPluginManager
 ) -> None:
-    """Full PR flow: checkout -b, add, commit, push, gh pr create."""
-    mock_run.side_effect = [
-        MagicMock(returncode=0, stdout="", stderr=""),  # checkout -b
-        MagicMock(returncode=0, stdout="", stderr=""),  # add
-        MagicMock(returncode=0, stdout="", stderr=""),  # commit
-        MagicMock(returncode=0, stdout="", stderr=""),  # push -u
-        MagicMock(
-            returncode=0,
-            stdout="https://github.com/user/repo/pull/99\n",
-            stderr="",
-        ),  # gh pr create
-    ]
+    """Full PR flow: checkout -b, add, validate, commit, push, gh pr create."""
+
+    def _side_effect(*args, **kwargs):
+        cmd = args[0]
+        if cmd == ["git", "diff", "--cached", "--quiet"]:
+            return MagicMock(returncode=1, stdout="", stderr="")
+        if cmd[:3] == ["gh", "pr", "create"]:
+            return MagicMock(
+                returncode=0,
+                stdout="https://github.com/user/repo/pull/99\n",
+                stderr="",
+            )
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    mock_run.side_effect = _side_effect
     ok, result = github_provider.create_pull_request(
         {"name": "feat-x", "message": "add feature", "files": []}, "/ws"
     )
 
     assert ok is True
     assert result == "https://github.com/user/repo/pull/99"
-    assert mock_run.call_count == 5
     # Verify branch creation
     assert mock_run.call_args_list[0][0][0] == ["git", "checkout", "-b", "feat-x"]
     # Verify gh pr create uses message for title/body
-    pr_cmd = mock_run.call_args_list[4][0][0]
+    pr_cmd = mock_run.call_args_list[-1][0][0]
     assert pr_cmd[:3] == ["gh", "pr", "create"]
 
 
