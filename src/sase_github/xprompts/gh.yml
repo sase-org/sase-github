@@ -152,3 +152,8 @@ steps:
         rm -f "$diff_file"
       fi
     output: { diff_path: path, meta_commit_message: line }
+
+  - name: sync
+    finally: true
+    bash: |
+      git pull --rebase --quiet 2>/dev/null || true
