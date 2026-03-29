@@ -39,6 +39,11 @@ class GitHubPlugin(GitCommon):
         return None
 
     @hookimpl
+    def vcs_can_rename_branch(self, cwd: str) -> bool:
+        """GitHub branches are immutable once pushed with a PR."""
+        return False
+
+    @hookimpl
     def vcs_abandon_change(
         self, cl: str, revision: str, cwd: str
     ) -> tuple[bool, str | None]:
