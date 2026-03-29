@@ -95,7 +95,8 @@ class GitHubPlugin(GitCommon):
         # GitHub-specific: create PR
         message = payload.get("message", "")
         body = payload.get("_pr_body", message)
-        title = message.split("\n", 1)[0]
+        prefix = payload.get("_pr_title_prefix", "")
+        title = prefix + message.split("\n", 1)[0]
         pr_out = self._run(
             ["gh", "pr", "create", "--title", title, "--body", body], cwd
         )

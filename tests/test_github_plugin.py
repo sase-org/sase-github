@@ -551,6 +551,47 @@ def test_direct_abandon_change_failure(mock_run: MagicMock) -> None:
 
 
 @patch(_MOCK_TARGET)
+def test_vcs_create_pull_request_with_pr_title_prefix(
+    mock_run: MagicMock, github_provider: VCSPluginManager
+) -> None:
+    """_pr_title_prefix is prepended to the PR title, body stays unchanged."""
+
+    captured_pr_cmd: list[str] = []
+
+    def _side_effect(*args, **kwargs):
+        cmd = args[0]
+        if cmd == ["git", "diff", "--cached", "--quiet"]:
+            return MagicMock(returncode=1, stdout="", stderr="")
+        if cmd[:3] == ["gh", "pr", "create"]:
+            captured_pr_cmd.extend(cmd)
+            return MagicMock(
+                returncode=0,
+                stdout="https://github.com/user/repo/pull/99\n",
+                stderr="",
+            )
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    mock_run.side_effect = _side_effect
+    ok, result = github_provider.create_pull_request(
+        {
+            "name": "feat-x",
+            "message": "Add feature",
+            "_pr_title_prefix": "[myproj] ",
+            "files": [],
+        },
+        "/ws",
+    )
+
+    assert ok is True
+    # Title should have the prefix
+    title_idx = captured_pr_cmd.index("--title") + 1
+    assert captured_pr_cmd[title_idx] == "[myproj] Add feature"
+    # Body should NOT have the prefix
+    body_idx = captured_pr_cmd.index("--body") + 1
+    assert not captured_pr_cmd[body_idx].startswith("[myproj]")
+
+
+@patch(_MOCK_TARGET)
 def test_direct_mail_push_fails(mock_run: MagicMock) -> None:
     """Test GitHubPlugin.vcs_mail when push fails."""
     mock_run.return_value = MagicMock(
