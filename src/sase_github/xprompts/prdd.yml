@@ -11,9 +11,17 @@ steps:
       fi
     output: { should_inject_prompt_part: bool }
 
+  - name: detect_base
+    if: "{{ check_branch.should_inject_prompt_part }}"
+    bash: |
+      ref=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null || echo "refs/remotes/origin/master")
+      branch=$(echo "$ref" | sed 's|refs/remotes/||')
+      echo "base=$branch"
+    output: { base: word }
+
   - name: content
     if: "{{ check_branch.should_inject_prompt_part }}"
     prompt_part: |
       ### Context Files Related to this PR
-      + #pr_diff : Contains a diff of the changes made by the current PR.
+      + #x(pr_changes.diff, git diff {{ detect_base.base }}...HEAD) : Contains a diff of the changes made by the current PR.
       + #x(pr_desc.txt, gh pr view --json body --jq '.body' 2>/dev/null || echo 'No PR description available.') : Contains the current PR's description.
