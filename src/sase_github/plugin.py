@@ -65,6 +65,17 @@ class GitHubPlugin(GitCommon):
         return (True, None)
 
     @hookimpl
+    def vcs_get_change_body(
+        self, change_ref: str, cwd: str
+    ) -> tuple[bool, str | None]:
+        out = self._run(
+            ["gh", "pr", "view", change_ref, "--json", "body", "-q", ".body"], cwd
+        )
+        if out.success:
+            return (True, out.stdout.strip())
+        return (False, out.stderr.strip())
+
+    @hookimpl
     def vcs_get_cl_number(self, cwd: str) -> tuple[bool, str | None]:
         out = self._run(["gh", "pr", "view", "--json", "number", "-q", ".number"], cwd)
         if out.success:
