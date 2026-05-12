@@ -64,7 +64,7 @@ When the ref contains `/`, it's treated as a GitHub repo path:
 ### Mode 2: Project Shorthand (`myproject`)
 
 When the ref matches an existing project directory:
-- Looks up `~/.sase/projects/<name>/<name>.gp`
+- Looks up `~/.sase/projects/<name>/<name>.sase` (legacy `.gp` is read as a fallback)
 - Reads `WORKSPACE_DIR` from the project file
 - Checks out the default branch
 

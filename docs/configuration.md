@@ -39,5 +39,6 @@ work), clones are created as siblings: `~/projects/github/<user>/<project>_<N>/`
 
 ## Project Files
 
-Project metadata is stored in `~/.sase/projects/<project>/<project>.gp`. The key field is `WORKSPACE_DIR`, which points
-to the primary workspace directory. This is set automatically when you first use `#gh(user/project)`.
+Project metadata is stored in `~/.sase/projects/<project>/<project>.sase` (legacy `.gp` files remain readable as a
+fallback). The key field is `WORKSPACE_DIR`, which points to the primary workspace directory. This is set automatically
+when you first use `#gh(user/project)`.

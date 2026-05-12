@@ -93,7 +93,7 @@ def test_submit_via_pr_merge_uses_pr_number(
 
     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
     cs = MagicMock()
-    cs.file_path = "/tmp/proj.gp"
+    cs.file_path = "/tmp/proj.sase"
     cs.name = "feat"
 
     ok, _ = _submit_via_pr_merge(cs, "/ws", None, pr_number="42")
@@ -121,7 +121,7 @@ def test_submit_via_pr_merge_without_pr_number(
 
     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
     cs = MagicMock()
-    cs.file_path = "/tmp/proj.gp"
+    cs.file_path = "/tmp/proj.sase"
     cs.name = "feat"
 
     ok, _ = _submit_via_pr_merge(cs, "/ws", None)

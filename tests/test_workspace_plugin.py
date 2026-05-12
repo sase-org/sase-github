@@ -56,6 +56,26 @@ class TestResolveGhRef:
             with patch("sase_github.workspace_plugin.Path.home", return_value=Path(d)):
                 proj_dir = os.path.join(d, ".sase", "projects", "myproj")
                 os.makedirs(proj_dir)
+                spec = os.path.join(proj_dir, "myproj.sase")
+                with open(spec, "w") as f:
+                    f.write("WORKSPACE_DIR: /work/myproj/\nNAME: cl\n")
+
+                result = resolve_gh_ref("myproj")
+                assert result.project_name == "myproj"
+                assert result.primary_workspace_dir == "/work/myproj/"
+                assert result.checkout_target == "origin/main"
+
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
+    def test_project_shorthand_legacy_gp_fallback(
+        self, mock_branch: MagicMock
+    ) -> None:
+        """Legacy ``.gp`` project spec is still resolvable when no ``.sase`` exists."""
+        with tempfile.TemporaryDirectory() as d:
+            with patch("sase_github.workspace_plugin.Path.home", return_value=Path(d)):
+                proj_dir = os.path.join(d, ".sase", "projects", "myproj")
+                os.makedirs(proj_dir)
                 gp = os.path.join(proj_dir, "myproj.gp")
                 with open(gp, "w") as f:
                     f.write("WORKSPACE_DIR: /work/myproj/\nNAME: cl\n")
@@ -75,13 +95,13 @@ class TestResolveGhRef:
         mock_branch: MagicMock,
     ) -> None:
         with tempfile.TemporaryDirectory() as d:
-            gp = os.path.join(d, "proj.gp")
-            with open(gp, "w") as f:
+            spec = os.path.join(d, "proj.sase")
+            with open(spec, "w") as f:
                 f.write("WORKSPACE_DIR: /work/proj/\nNAME: my-feature\n")
 
             cs = MagicMock()
             cs.name = "my-feature"
-            cs.file_path = gp
+            cs.file_path = spec
             cs.project_basename = "proj"
             mock_find.return_value = [cs]
 
@@ -96,7 +116,7 @@ class TestResolveGhRef:
 
     @patch("sase.ace.changespec.find_all_changespecs")
     def test_changespec_no_workspace_dir(self, mock_find: MagicMock) -> None:
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".gp", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sase", delete=False) as f:
             f.write("NAME: my-feature\n")
             f.flush()
 
@@ -135,7 +155,7 @@ class TestDetectWorkflowTypeForProject:
     def test_hg_no_git(self) -> None:
         """Returns None when no WORKSPACE_DIR or no .git directory."""
         plugin = GitHubWorkspacePlugin()
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".gp", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sase", delete=False) as f:
             f.write("NAME: cl\n")
             f.flush()
             assert plugin.ws_detect_workflow_type(project_file=f.name) is None
@@ -148,14 +168,14 @@ class TestDetectWorkflowTypeForProject:
         with tempfile.TemporaryDirectory() as d:
             workspace = os.path.join(d, "repo")
             os.makedirs(os.path.join(workspace, ".git"))
-            gp = os.path.join(d, "proj.gp")
-            with open(gp, "w") as f:
+            spec = os.path.join(d, "proj.sase")
+            with open(spec, "w") as f:
                 f.write(
                     f"WORKSPACE_DIR: {workspace}\n"
                     "BARE_REPO_DIR: /repos/proj.git\n"
                     "NAME: cl\n"
                 )
-            assert plugin.ws_detect_workflow_type(project_file=gp) is None
+            assert plugin.ws_detect_workflow_type(project_file=spec) is None
 
     @patch("sase_github.workspace_plugin.subprocess.run")
     def test_git_local_origin_url(self, mock_run: MagicMock) -> None:
@@ -167,10 +187,10 @@ class TestDetectWorkflowTypeForProject:
         with tempfile.TemporaryDirectory() as d:
             workspace = os.path.join(d, "repo")
             os.makedirs(os.path.join(workspace, ".git"))
-            gp = os.path.join(d, "proj.gp")
-            with open(gp, "w") as f:
+            spec = os.path.join(d, "proj.sase")
+            with open(spec, "w") as f:
                 f.write(f"WORKSPACE_DIR: {workspace}\nNAME: cl\n")
-            assert plugin.ws_detect_workflow_type(project_file=gp) is None
+            assert plugin.ws_detect_workflow_type(project_file=spec) is None
 
     @patch("sase_github.workspace_plugin.subprocess.run")
     def test_gh_github_origin_url(self, mock_run: MagicMock) -> None:
@@ -182,7 +202,7 @@ class TestDetectWorkflowTypeForProject:
         with tempfile.TemporaryDirectory() as d:
             workspace = os.path.join(d, "repo")
             os.makedirs(os.path.join(workspace, ".git"))
-            gp = os.path.join(d, "proj.gp")
-            with open(gp, "w") as f:
+            spec = os.path.join(d, "proj.sase")
+            with open(spec, "w") as f:
                 f.write(f"WORKSPACE_DIR: {workspace}\nNAME: cl\n")
-            assert plugin.ws_detect_workflow_type(project_file=gp) == "gh"
+            assert plugin.ws_detect_workflow_type(project_file=spec) == "gh"

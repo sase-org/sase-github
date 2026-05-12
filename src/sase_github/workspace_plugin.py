@@ -10,6 +10,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from sase.ace.changespec.project_spec_path import preferred_project_spec_path
 from sase.workspace_provider import ResolvedRef, WorkflowMetadata, hookimpl
 from sase.workspace_provider.utils import (
     get_default_branch,
@@ -357,7 +358,8 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
     1. **Repo path** (contains ``/``): ``user/project`` → derive workspace
        from ``~/projects/github/<user>/<project>/``.
     2. **Project shorthand** (no ``/``, matching project dir): look up
-       WORKSPACE_DIR from ``~/.sase/projects/<name>/<name>.gp``.
+       WORKSPACE_DIR from ``~/.sase/projects/<name>/<name>.sase``
+       (with legacy ``.gp`` fallback).
     3. **ChangeSpec name**: search all changespecs for a matching name,
        read WORKSPACE_DIR from its project file.
 
@@ -377,7 +379,9 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
         primary_workspace_dir = (
             str(Path.home() / "projects" / "github" / user / project) + "/"
         )
-        project_file = str(projects_base / project / f"{project}.gp")
+        project_file = preferred_project_spec_path(
+            str(projects_base / project), project
+        )
 
         existing = parse_workspace_dir(project_file)
         if existing and os.path.normpath(existing) != os.path.normpath(
@@ -403,7 +407,9 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
 
     # --- Mode 2: project shorthand ---
     project_dir = projects_base / gh_ref
-    project_file_path = project_dir / f"{gh_ref}.gp"
+    project_file_path = Path(
+        preferred_project_spec_path(str(project_dir), gh_ref)
+    )
     if project_dir.is_dir() and project_file_path.exists():
         workspace_dir = parse_workspace_dir(str(project_file_path))
         if workspace_dir:
