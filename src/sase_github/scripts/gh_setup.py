@@ -3,7 +3,7 @@
 import os
 
 from sase.workspace_provider import resolve_ref
-from sase.workspace_provider.utils import ensure_git_clone
+from sase.workspace_provider.utils import ensure_workspace_checkout
 from sase.running_field import (
     claim_workspace,
     get_first_available_axe_workspace,
@@ -33,10 +33,14 @@ def main(
         workspace_dir = os.environ["SASE_GH_WORKSPACE_DIR"]
     elif n is not None:
         workspace_num = n
-        workspace_dir = ensure_git_clone(resolved.primary_workspace_dir, workspace_num)
+        workspace_dir = ensure_workspace_checkout(
+            resolved.primary_workspace_dir, workspace_num
+        )
     else:
         workspace_num = get_first_available_axe_workspace(project_file)
-        workspace_dir = ensure_git_clone(resolved.primary_workspace_dir, workspace_num)
+        workspace_dir = ensure_workspace_checkout(
+            resolved.primary_workspace_dir, workspace_num
+        )
 
     # Use the parent process PID, not our own.  This setup step runs as a
     # short-lived subprocess (via ``subprocess.run``), so ``os.getpid()``

@@ -123,9 +123,9 @@ class GitHubWorkspacePlugin:
     ) -> str | None:
         if workflow_type != "gh":
             return None
-        from sase.workspace_provider.utils import ensure_git_clone
+        from sase.workspace_provider.utils import ensure_workspace_checkout
 
-        return ensure_git_clone(primary_workspace_dir, workspace_num)
+        return ensure_workspace_checkout(primary_workspace_dir, workspace_num)
 
     @hookimpl
     def ws_prepare_mail(
