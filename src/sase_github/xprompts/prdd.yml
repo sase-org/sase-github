@@ -1,3 +1,4 @@
+description: Inject current pull request diff and description context when on a PR branch.
 tags: append_to_commit_and_propose
 
 steps:

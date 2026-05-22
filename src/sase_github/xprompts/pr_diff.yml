@@ -1,3 +1,4 @@
+description: Attach the current pull request diff as a prompt context file.
 tags: diff_file
 
 steps:

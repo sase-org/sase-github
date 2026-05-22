@@ -1,6 +1,9 @@
+description: Generate and apply a GitHub pull request title and body from a ChangeSpec.
+
 input:
   - name: name
     type: word
+    description: ChangeSpec name whose branch and diff should drive the PR description.
 
 steps:
   - name: get_context
