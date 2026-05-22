@@ -34,8 +34,10 @@ Currently the default config defines:
 
 ## Workspace Layout
 
-GitHub workspaces are stored under `~/projects/github/<user>/<project>/`. When using numbered workspaces (for parallel
-work), clones are created as siblings: `~/projects/github/<user>/<project>_<N>/`.
+Primary GitHub workspaces are stored under `~/projects/github/<user>/<project>/` when first resolved from a
+`#gh(user/project)` reference. Numbered parallel-work checkouts follow SASE's shared `workspace.root` policy: by
+default they live under the platform state-root namespace, while explicit `workspace.root: adjacent` keeps the legacy
+`~/projects/github/<user>/<project>_<N>/` sibling layout.
 
 ## Project Files
 
