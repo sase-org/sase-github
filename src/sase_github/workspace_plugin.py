@@ -5,10 +5,14 @@ handling workflow detection, reference resolution, change labels, and
 PR-based submission.
 """
 
+from __future__ import annotations
+
 import os
 import re
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sase.ace.changespec.project_spec_path import preferred_project_spec_path
 from sase.workspace_provider import ResolvedRef, WorkflowMetadata, hookimpl
@@ -17,6 +21,9 @@ from sase.workspace_provider.utils import (
     parse_workspace_dir,
     set_workspace_dir,
 )
+
+if TYPE_CHECKING:
+    from sase.core.project_lifecycle_wire import ProjectRecordWire
 
 
 class GitHubWorkspacePlugin:
@@ -350,6 +357,188 @@ def _clone_gh_repo(user: str, project: str, target_dir: str) -> None:
         raise RuntimeError(error_msg) from e
 
 
+def _projects_base() -> Path:
+    return Path.home() / ".sase" / "projects"
+
+
+def _github_workspace_dir(user: str, project: str) -> str:
+    return str(Path.home() / "projects" / "github" / user / project) + "/"
+
+
+def _normalized_workspace_dir(workspace_dir: str | None) -> str | None:
+    if not workspace_dir:
+        return None
+    return os.path.normcase(os.path.normpath(os.path.expanduser(workspace_dir)))
+
+
+def _list_project_records(projects_base: Path) -> list[ProjectRecordWire]:
+    if not projects_base.is_dir():
+        return []
+
+    from sase.core.project_lifecycle_facade import list_project_records
+    from sase.core.project_lifecycle_wire import PROJECT_LIFECYCLE_STATES
+
+    return list_project_records(
+        projects_base,
+        list(PROJECT_LIFECYCLE_STATES),
+        include_home=False,
+    )
+
+
+def _find_project_record_for_workspace(
+    records: Sequence[ProjectRecordWire],
+    workspace_dir: str,
+) -> ProjectRecordWire | None:
+    expected = _normalized_workspace_dir(workspace_dir)
+    for record in records:
+        if _normalized_workspace_dir(record.workspace_dir) == expected:
+            return record
+    return None
+
+
+def _find_project_record_for_alias(
+    records: Sequence[ProjectRecordWire],
+    alias: str,
+) -> ProjectRecordWire | None:
+    for record in records:
+        if alias in record.aliases:
+            return record
+    return None
+
+
+def _is_valid_project_name(name: str) -> bool:
+    from sase.core.paths import is_valid_sase_project_name
+
+    return is_valid_sase_project_name(name)
+
+
+def _canonical_project_name_base(user: str, project: str) -> str:
+    base = f"gh_{user}__{project}"
+    if not _is_valid_project_name(base):
+        raise ValueError(
+            f"Cannot derive a valid SASE project name for GitHub repo "
+            f"'{user}/{project}'"
+        )
+    return base
+
+
+def _project_name_or_aliases(records: Sequence[ProjectRecordWire]) -> set[str]:
+    occupied: set[str] = set()
+    for record in records:
+        occupied.add(record.project_name)
+        occupied.update(record.aliases)
+    return occupied
+
+
+def _allocate_canonical_project_name(
+    user: str,
+    project: str,
+    records: Sequence[ProjectRecordWire],
+) -> str:
+    base = _canonical_project_name_base(user, project)
+    occupied = _project_name_or_aliases(records)
+
+    candidate = base
+    suffix = 2
+    while candidate in occupied:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _project_file_for(projects_base: Path, project_name: str) -> str:
+    return preferred_project_spec_path(str(projects_base / project_name), project_name)
+
+
+def _ensure_useful_repo_alias(
+    project_name: str,
+    repo_name: str,
+    *,
+    projects_base: Path,
+) -> None:
+    if repo_name == project_name or not _is_valid_project_name(repo_name):
+        return
+
+    from sase.project_aliases import (
+        allocate_project_alias,
+        ensure_project_alias_locked,
+    )
+
+    attempts = 3
+    for attempt in range(attempts):
+        records = _list_project_records(projects_base)
+        alias = allocate_project_alias(
+            repo_name,
+            records,
+            project_name=project_name,
+        )
+        if alias == project_name:
+            return
+        try:
+            ensure_project_alias_locked(
+                project_name,
+                alias,
+                projects_root=projects_base,
+            )
+            return
+        except ValueError:
+            if attempt == attempts - 1:
+                raise
+
+
+def _resolved_ref_for_record(
+    record: ProjectRecordWire,
+) -> ResolvedRef:
+    workspace_dir = record.workspace_dir or parse_workspace_dir(record.project_file)
+    if not workspace_dir:
+        raise ValueError(
+            f"Project '{record.project_name}' is resolved by alias but "
+            "WORKSPACE_DIR is not set"
+        )
+    return ResolvedRef(
+        project_file=record.project_file,
+        project_name=record.project_name,
+        primary_workspace_dir=workspace_dir,
+        checkout_target=get_default_branch(workspace_dir),
+    )
+
+
+def _resolve_repo_path_ref(user: str, project: str) -> ResolvedRef:
+    projects_base = _projects_base()
+    primary_workspace_dir = _github_workspace_dir(user, project)
+    records = _list_project_records(projects_base)
+    existing_record = _find_project_record_for_workspace(
+        records,
+        primary_workspace_dir,
+    )
+
+    if not os.path.isdir(primary_workspace_dir.rstrip("/")):
+        _clone_gh_repo(user, project, primary_workspace_dir)
+
+    if existing_record is None:
+        project_name = _allocate_canonical_project_name(user, project, records)
+        project_file = _project_file_for(projects_base, project_name)
+        if not set_workspace_dir(project_file, primary_workspace_dir):
+            raise ValueError(f"Failed to write WORKSPACE_DIR for '{project_name}'")
+    else:
+        project_name = existing_record.project_name
+        project_file = existing_record.project_file
+
+    _ensure_useful_repo_alias(
+        project_name,
+        project,
+        projects_base=projects_base,
+    )
+    checkout_target = get_default_branch(primary_workspace_dir)
+
+    return ResolvedRef(
+        project_file=project_file,
+        project_name=project_name,
+        primary_workspace_dir=primary_workspace_dir,
+        checkout_target=checkout_target,
+    )
+
+
 def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
     """Resolve a ``#gh`` reference to workspace and branch information.
 
@@ -368,48 +557,25 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
     """
     from sase.ace.changespec import find_all_changespecs
 
-    projects_base = Path.home() / ".sase" / "projects"
+    projects_base = _projects_base()
 
     # --- Mode 1: repo path (user/project) ---
     if "/" in gh_ref:
         parts = gh_ref.strip("/").split("/")
         if len(parts) != 2:
             raise ValueError(f"Invalid repo path '{gh_ref}': expected 'user/project'")
-        user, project = parts
-        primary_workspace_dir = (
-            str(Path.home() / "projects" / "github" / user / project) + "/"
-        )
-        project_file = preferred_project_spec_path(
-            str(projects_base / project), project
-        )
+        return _resolve_repo_path_ref(*parts)
 
-        existing = parse_workspace_dir(project_file)
-        if existing and os.path.normpath(existing) != os.path.normpath(
-            primary_workspace_dir
-        ):
-            raise ValueError(
-                f"WORKSPACE_DIR conflict for '{project}': "
-                f"existing={existing}, derived={primary_workspace_dir}"
-            )
-
-        if not os.path.isdir(primary_workspace_dir.rstrip("/")):
-            _clone_gh_repo(user, project, primary_workspace_dir)
-
-        set_workspace_dir(project_file, primary_workspace_dir)
-        checkout_target = get_default_branch(primary_workspace_dir)
-
-        return ResolvedRef(
-            project_file=project_file,
-            project_name=project,
-            primary_workspace_dir=primary_workspace_dir,
-            checkout_target=checkout_target,
-        )
+    alias_record = _find_project_record_for_alias(
+        _list_project_records(projects_base),
+        gh_ref,
+    )
+    if alias_record is not None:
+        return _resolved_ref_for_record(alias_record)
 
     # --- Mode 2: project shorthand ---
     project_dir = projects_base / gh_ref
-    project_file_path = Path(
-        preferred_project_spec_path(str(project_dir), gh_ref)
-    )
+    project_file_path = Path(preferred_project_spec_path(str(project_dir), gh_ref))
     if project_dir.is_dir() and project_file_path.exists():
         workspace_dir = parse_workspace_dir(str(project_file_path))
         if workspace_dir:

@@ -13,47 +13,175 @@ from sase_github.workspace_plugin import (
 )
 
 
+def _write_project(home: Path, project_name: str, content: str) -> Path:
+    project_dir = home / ".sase" / "projects" / project_name
+    project_dir.mkdir(parents=True, exist_ok=True)
+    project_file = project_dir / f"{project_name}.sase"
+    project_file.write_text(content, encoding="utf-8")
+    return project_file
+
+
+def _github_workspace(home: Path, user: str, project: str) -> str:
+    workspace = home / "projects" / "github" / user / project
+    workspace.mkdir(parents=True, exist_ok=True)
+    return str(workspace) + "/"
+
+
+def _home_patches(home: Path) -> tuple[object, object]:
+    return (
+        patch("sase_github.workspace_plugin.Path.home", return_value=home),
+        patch.dict(os.environ, {"SASE_HOME": str(home / ".sase")}),
+    )
+
+
 class TestResolveGhRef:
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
-    @patch("sase_github.workspace_plugin.set_workspace_dir", return_value=True)
-    @patch("sase_github.workspace_plugin.parse_workspace_dir", return_value=None)
-    @patch("sase_github.workspace_plugin.os.path.isdir", return_value=True)
-    def test_repo_path(
-        self,
-        mock_isdir: MagicMock,
-        mock_parse: MagicMock,
-        mock_set: MagicMock,
-        mock_branch: MagicMock,
+    def test_repo_path_creates_canonical_project_and_alias(
+        self, mock_branch: MagicMock
     ) -> None:
-        result = resolve_gh_ref("alice/myrepo")
-        assert result.project_name == "myrepo"
-        assert result.checkout_target == "origin/main"
-        assert "alice/myrepo" in result.primary_workspace_dir
-        mock_set.assert_called_once()
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            primary = _github_workspace(home, "alice", "myrepo")
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
+                result = resolve_gh_ref("alice/myrepo")
+
+            project_file = (
+                home
+                / ".sase"
+                / "projects"
+                / "gh_alice__myrepo"
+                / "gh_alice__myrepo.sase"
+            )
+            content = project_file.read_text(encoding="utf-8")
+            assert result.project_name == "gh_alice__myrepo"
+            assert result.project_file == str(project_file)
+            assert result.primary_workspace_dir == primary
+            assert result.checkout_target == "origin/main"
+            assert f"WORKSPACE_DIR: {primary}\n" in content
+            assert "PROJECT_ALIASES: myrepo\n" in content
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
-    @patch("sase_github.workspace_plugin.set_workspace_dir", return_value=True)
-    @patch("sase_github.workspace_plugin.parse_workspace_dir")
-    def test_repo_path_conflict(
-        self,
-        mock_parse: MagicMock,
-        mock_set: MagicMock,
-        mock_branch: MagicMock,
+    def test_duplicate_repo_basename_gets_distinct_alias(
+        self, mock_branch: MagicMock
     ) -> None:
-        mock_parse.return_value = "/some/other/path/"
-        with pytest.raises(ValueError, match="WORKSPACE_DIR conflict"):
-            resolve_gh_ref("alice/myrepo")
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            _github_workspace(home, "foo-org", "foo")
+            _github_workspace(home, "bar-org", "foo")
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
+                first = resolve_gh_ref("foo-org/foo")
+                second = resolve_gh_ref("bar-org/foo")
+
+            first_file = Path(first.project_file)
+            second_file = Path(second.project_file)
+            assert first.project_name == "gh_foo-org__foo"
+            assert second.project_name == "gh_bar-org__foo"
+            assert "PROJECT_ALIASES: foo\n" in first_file.read_text(encoding="utf-8")
+            assert "PROJECT_ALIASES: foo-2\n" in second_file.read_text(encoding="utf-8")
+
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
+    def test_repo_path_reuses_legacy_basename_project(
+        self, mock_branch: MagicMock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            primary = _github_workspace(home, "alice", "myrepo")
+            project_file = _write_project(
+                home,
+                "myrepo",
+                f"WORKSPACE_DIR: {primary}\nNAME: legacy\n",
+            )
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
+                result = resolve_gh_ref("alice/myrepo")
+
+            content = project_file.read_text(encoding="utf-8")
+            assert result.project_name == "myrepo"
+            assert result.project_file == str(project_file)
+            assert "PROJECT_ALIASES" not in content
+
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
+    def test_repo_path_duplicate_basename_no_longer_conflicts(
+        self, mock_branch: MagicMock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            primary = _github_workspace(home, "alice", "foo")
+            _write_project(
+                home,
+                "foo",
+                "WORKSPACE_DIR: /some/other/path/\nNAME: other\n",
+            )
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
+                result = resolve_gh_ref("alice/foo")
+
+            content = Path(result.project_file).read_text(encoding="utf-8")
+            assert result.project_name == "gh_alice__foo"
+            assert result.primary_workspace_dir == primary
+            assert "PROJECT_ALIASES: foo-2\n" in content
+
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
+    def test_repo_path_suffixes_occupied_canonical_project_name(
+        self, mock_branch: MagicMock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            _github_workspace(home, "alice", "foo")
+            _write_project(
+                home,
+                "gh_alice__foo",
+                "WORKSPACE_DIR: /some/other/path/\nNAME: other\n",
+            )
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
+                result = resolve_gh_ref("alice/foo")
+
+            assert result.project_name == "gh_alice__foo-2"
+            assert "PROJECT_ALIASES: foo\n" in Path(result.project_file).read_text(
+                encoding="utf-8"
+            )
+
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
+    def test_project_alias_shorthand_resolves_canonical_project(
+        self, mock_branch: MagicMock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            _github_workspace(home, "foo-org", "foo")
+            _github_workspace(home, "bar-org", "foo")
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
+                resolve_gh_ref("foo-org/foo")
+                canonical = resolve_gh_ref("bar-org/foo")
+                alias = resolve_gh_ref("foo-2")
+
+            assert alias.project_name == canonical.project_name
+            assert alias.project_file == canonical.project_file
+            assert alias.primary_workspace_dir == canonical.primary_workspace_dir
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
     def test_project_shorthand(self, mock_branch: MagicMock) -> None:
         with tempfile.TemporaryDirectory() as d:
-            with patch("sase_github.workspace_plugin.Path.home", return_value=Path(d)):
+            home = Path(d)
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
                 proj_dir = os.path.join(d, ".sase", "projects", "myproj")
                 os.makedirs(proj_dir)
                 spec = os.path.join(proj_dir, "myproj.sase")
@@ -68,12 +196,12 @@ class TestResolveGhRef:
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
-    def test_project_shorthand_legacy_gp_fallback(
-        self, mock_branch: MagicMock
-    ) -> None:
+    def test_project_shorthand_legacy_gp_fallback(self, mock_branch: MagicMock) -> None:
         """Legacy ``.gp`` project spec is still resolvable when no ``.sase`` exists."""
         with tempfile.TemporaryDirectory() as d:
-            with patch("sase_github.workspace_plugin.Path.home", return_value=Path(d)):
+            home = Path(d)
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
                 proj_dir = os.path.join(d, ".sase", "projects", "myproj")
                 os.makedirs(proj_dir)
                 gp = os.path.join(proj_dir, "myproj.gp")
