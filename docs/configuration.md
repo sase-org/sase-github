@@ -41,6 +41,15 @@ default they live under the platform state-root namespace, while explicit `works
 
 ## Project Files
 
-Project metadata is stored in `~/.sase/projects/<project>/<project>.sase` (legacy `.gp` files remain readable as a
-fallback). The key field is `WORKSPACE_DIR`, which points to the primary workspace directory. This is set automatically
-when you first use `#gh(user/project)`.
+Project metadata is stored in `~/.sase/projects/<project>/<project>.sase`; legacy `.gp` files remain readable as a
+fallback. The key field is `WORKSPACE_DIR`, which points to the primary workspace directory and is set automatically
+when you first use an `#gh:<user>/<project>` ref.
+
+For new `owner/repo` refs, the project name is based on the full GitHub identity, normally `gh_<user>__<project>`, so
+two owners can have repositories with the same basename. If that canonical name is already occupied by a different
+project or alias, sase-github adds a deterministic suffix such as `-2`.
+
+sase-github also writes a short `PROJECT_ALIASES` value for the repo basename when it is valid and useful. The first
+`owner/foo` repo can get alias `foo`; a second `owner/foo` repo gets the next available alias such as `foo-2`. Existing
+basename ProjectSpecs are reused when their `WORKSPACE_DIR` already matches the GitHub workspace, so no automatic
+migration or rename is required. Inspect or adjust generated aliases with `sase project alias`.

@@ -56,14 +56,27 @@ The `resolve_gh_ref()` function supports three dispatch modes for `#gh` referenc
 ### Mode 1: Repo Path (`user/project`)
 
 When the ref contains `/`, it's treated as a GitHub repo path:
+
 - Derives workspace from `~/projects/github/<user>/<project>/`
 - Clones the repo if it doesn't exist (SSH for orgs in `github_orgs`, HTTPS otherwise)
-- Sets `WORKSPACE_DIR` in the project file
+- Reuses an existing SASE ProjectSpec whose normalized `WORKSPACE_DIR` already points at that workspace
+- Otherwise creates a canonical project name from the repo identity, normally `gh_<user>__<project>`
+- Adds a deterministic suffix such as `-2` only if that canonical project name is already occupied by a different
+  project or alias
+- Sets `WORKSPACE_DIR` in the canonical project file
+- Ensures a useful short alias for the repo basename, suffixing duplicate basenames as `<project>-2`, `<project>-3`,
+  and higher
 - Checks out the default branch
+
+This preserves legacy basename projects. If `~/.sase/projects/foo/foo.sase` already points at
+`~/projects/github/foo-org/foo/`, resolving `#gh:foo-org/foo` keeps using project `foo`; it does not rename or migrate
+the ProjectSpec.
 
 ### Mode 2: Project Shorthand (`myproject`)
 
-When the ref matches an existing project directory:
+When the ref matches an existing project directory or project alias:
+
+- Resolves aliases before project-directory lookup, so a generated alias like `foo-2` points at its canonical project
 - Looks up `~/.sase/projects/<name>/<name>.sase` (legacy `.gp` is read as a fallback)
 - Reads `WORKSPACE_DIR` from the project file
 - Checks out the default branch
