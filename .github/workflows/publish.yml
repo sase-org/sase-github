@@ -1,0 +1,125 @@
+name: Publish
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      publish_existing:
+        description: Publish the existing 0.1.1 release artifacts
+        required: true
+        type: boolean
+        default: false
+
+env:
+  SASE_CORE_REF: v0.1.3
+  SASE_CORE_PATH: .ci/sase
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created || 'false' }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        if: ${{ github.event_name == 'push' }}
+        id: release
+        with:
+          token: ${{ secrets.SASE_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build:
+    needs: release
+    if: ${{ needs.release.outputs.release_created == 'true' || (github.event_name == 'workflow_dispatch' && inputs.publish_existing == true) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Build package
+        run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  install-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Check out SASE
+        uses: actions/checkout@v4
+        with:
+          repository: sase-org/sase
+          ref: ${{ env.SASE_CORE_REF }}
+          path: ${{ env.SASE_CORE_PATH }}
+      - uses: astral-sh/setup-uv@v4
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install built sase-github wheel into a fresh venv
+        run: |
+          uv venv --python 3.12 /tmp/smoke-venv
+          uv pip install --python /tmp/smoke-venv/bin/python "${SASE_CORE_PATH}"
+          uv pip install --python /tmp/smoke-venv/bin/python dist/*.whl
+      - name: Smoke check
+        run: |
+          /tmp/smoke-venv/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+
+          import sase_github
+
+          expected = {
+              "sase_vcs": {"github": "sase_github.plugin:GitHubPlugin"},
+              "sase_workspace": {
+                  "github": "sase_github.workspace_plugin:GitHubWorkspacePlugin"
+              },
+              "sase_config": {"sase_github": "sase_github"},
+              "sase_xprompts": {"sase_github": "sase_github"},
+          }
+
+          discovered = entry_points()
+          for group, entries in expected.items():
+              group_entries = {
+                  entry_point.name: entry_point.value
+                  for entry_point in discovered.select(group=group)
+              }
+              for name, value in entries.items():
+                  actual = group_entries.get(name)
+                  if actual != value:
+                      raise SystemExit(
+                          f"{group} entry point {name!r}: expected {value!r}, got {actual!r}"
+                      )
+
+          assert sase_github
+          PY
+
+  publish:
+    needs: [release, build, install-smoke]
+    if: ${{ needs.release.outputs.release_created == 'true' || (github.event_name == 'workflow_dispatch' && inputs.publish_existing == true) }}
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
