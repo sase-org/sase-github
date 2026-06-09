@@ -7,9 +7,13 @@ default:
     @just --list
 
 _setup:
-    @[ -x {{ venv_bin }}/python ] || (uv venv {{ venv_dir }} && uv pip install -e ".[dev]")
+    @[ -x {{ venv_bin }}/python ] || (uv venv {{ venv_dir }} && just install)
 
-install: _setup
+install:
+    @[ -x {{ venv_bin }}/python ] || uv venv {{ venv_dir }}
+    @if [ -n "${SASE_CORE_PATH:-}" ]; then \
+        uv pip install -e "${SASE_CORE_PATH}"; \
+    fi
     uv pip install -e ".[dev]"
 
 lint: _setup

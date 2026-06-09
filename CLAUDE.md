@@ -16,7 +16,7 @@ just check      # lint + test
 ## Architecture
 - `src/sase_github/plugin.py` — GitHubPlugin class (extends `sase.vcs_provider.plugins._git_common.GitCommon`)
 - `src/sase_github/xprompts/` — GitHub workflow YAML files discovered via `sase_xprompts` entry point
-- Depends on `sase>=0.1.0` for base classes, hookspec, and script modules
+- Depends on `sase>=0.1.3` for base classes, hookspec, and script modules
 
 ## Code Conventions
 - Absolute imports: `from sase_github.plugin import GitHubPlugin`

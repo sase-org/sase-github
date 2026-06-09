@@ -23,7 +23,7 @@ Or with [uv](https://docs.astral.sh/uv/):
 uv pip install sase-github
 ```
 
-Requires `sase>=0.1.0` as a dependency (installed automatically).
+Requires `sase>=0.1.3` as a dependency (installed automatically).
 
 ## What's Included
 
@@ -67,7 +67,7 @@ submission.
 ## Requirements
 
 - Python 3.12+
-- [sase](https://github.com/sase-org/sase) >= 0.1.0
+- [sase](https://github.com/sase-org/sase) >= 0.1.3
 - [gh](https://cli.github.com/) CLI (for GitHub API operations)
 
 ## Development
@@ -81,6 +81,9 @@ just check      # All checks (lint + test)
 just build      # Build distribution packages
 just clean      # Remove build artifacts
 ```
+
+Set `SASE_CORE_PATH=/path/to/sase` when you need development installs to use an editable SASE checkout before installing
+`sase-github`.
 
 ## Project Structure
 
