@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_existing:
-        description: Publish the existing 0.1.1 release artifacts
+        description: Publish the existing release artifacts for the version on master
         required: true
         type: boolean
         default: false
