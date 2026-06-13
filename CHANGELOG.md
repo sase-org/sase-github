@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.2](https://github.com/sase-org/sase-github/compare/v0.1.1...v0.1.2) (2026-06-13)
+
+
+### Bug Fixes
+
+* restore sase-github PyPI publish workflow ([077e91a](https://github.com/sase-org/sase-github/commit/077e91a57e836856d1e263cdc348cf3761516b4c))
+* use trusted publisher workflow path ([6a9fea0](https://github.com/sase-org/sase-github/commit/6a9fea00701428903f086ac871ac6c103521ae1d))
+
+
+### Documentation
+
+* add PyPI version badge ([58f0145](https://github.com/sase-org/sase-github/commit/58f014514664d6c8402b04bbaea37e0402099312))
+
 ## 0.1.1 (2026-06-09)
 
 
