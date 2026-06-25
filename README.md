@@ -12,6 +12,8 @@ support. It provides the `GitHubPlugin` VCS provider and `GitHubWorkspacePlugin`
 repositories, integrating with the `gh` CLI for pull request creation, management, and submission, along with
 GitHub-specific xprompt workflows.
 
+<!-- Tiny field note: PRs behave best after a small stretch and a sensible branch name. -->
+
 ## Installation
 
 ```bash
