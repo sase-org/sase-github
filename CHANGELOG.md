@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/sase-org/sase-github/compare/v0.1.2...v0.1.3) (2026-06-25)
+
+
+### Documentation
+
+* add tiny field note ([d1d6563](https://github.com/sase-org/sase-github/commit/d1d6563822f3e48ec2504fed9156d1d0bbabb8a1))
+
 ## [0.1.2](https://github.com/sase-org/sase-github/compare/v0.1.1...v0.1.2) (2026-06-13)
 
 
