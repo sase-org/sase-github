@@ -401,7 +401,7 @@ def _find_project_record_for_alias(
     alias: str,
 ) -> ProjectRecordWire | None:
     for record in records:
-        if alias in record.aliases:
+        if alias == getattr(record, "display_name", None) or alias in record.aliases:
             return record
     return None
 
@@ -422,10 +422,12 @@ def _canonical_project_name_base(user: str, project: str) -> str:
     return base
 
 
-def _project_name_or_aliases(records: Sequence[ProjectRecordWire]) -> set[str]:
+def _project_refs(records: Sequence[ProjectRecordWire]) -> set[str]:
     occupied: set[str] = set()
     for record in records:
         occupied.add(record.project_name)
+        if display_name := getattr(record, "display_name", None):
+            occupied.add(display_name)
         occupied.update(record.aliases)
     return occupied
 
@@ -436,7 +438,7 @@ def _allocate_canonical_project_name(
     records: Sequence[ProjectRecordWire],
 ) -> str:
     base = _canonical_project_name_base(user, project)
-    occupied = _project_name_or_aliases(records)
+    occupied = _project_refs(records)
 
     candidate = base
     suffix = 2
@@ -450,7 +452,7 @@ def _project_file_for(projects_base: Path, project_name: str) -> str:
     return preferred_project_spec_path(str(projects_base / project_name), project_name)
 
 
-def _ensure_useful_repo_alias(
+def _ensure_useful_repo_name(
     project_name: str,
     repo_name: str,
     *,
@@ -460,24 +462,24 @@ def _ensure_useful_repo_alias(
         return
 
     from sase.project_aliases import (
-        allocate_project_alias,
-        ensure_project_alias_locked,
+        allocate_project_name,
+        ensure_project_name_locked,
     )
 
     attempts = 3
     for attempt in range(attempts):
         records = _list_project_records(projects_base)
-        alias = allocate_project_alias(
+        display_name = allocate_project_name(
             repo_name,
             records,
             project_name=project_name,
         )
-        if alias == project_name:
+        if display_name == project_name:
             return
         try:
-            ensure_project_alias_locked(
+            ensure_project_name_locked(
                 project_name,
-                alias,
+                display_name,
                 projects_root=projects_base,
             )
             return
@@ -520,15 +522,15 @@ def _resolve_repo_path_ref(user: str, project: str) -> ResolvedRef:
         project_file = _project_file_for(projects_base, project_name)
         if not set_workspace_dir(project_file, primary_workspace_dir):
             raise ValueError(f"Failed to write WORKSPACE_DIR for '{project_name}'")
+        _ensure_useful_repo_name(
+            project_name,
+            project,
+            projects_base=projects_base,
+        )
     else:
         project_name = existing_record.project_name
         project_file = existing_record.project_file
 
-    _ensure_useful_repo_alias(
-        project_name,
-        project,
-        projects_base=projects_base,
-    )
     checkout_target = get_default_branch(primary_workspace_dir)
 
     return ResolvedRef(

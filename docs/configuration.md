@@ -35,8 +35,8 @@ Currently the default config defines:
 ## Workspace Layout
 
 Primary GitHub workspaces are stored under `~/projects/github/<user>/<project>/` when first resolved from a
-`#gh(user/project)` reference. Numbered parallel-work checkouts follow SASE's shared `workspace.root` policy: by
-default they live under the platform state-root namespace, while explicit `workspace.root: adjacent` keeps the legacy
+`#gh(user/project)` reference. Numbered parallel-work checkouts follow SASE's shared `workspace.root` policy: by default
+they live under the platform state-root namespace, while explicit `workspace.root: adjacent` keeps the legacy
 `~/projects/github/<user>/<project>_<N>/` sibling layout.
 
 ## Project Files
@@ -47,9 +47,10 @@ when you first use an `#gh:<user>/<project>` ref.
 
 For new `owner/repo` refs, the project name is based on the full GitHub identity, normally `gh_<user>__<project>`, so
 two owners can have repositories with the same basename. If that canonical name is already occupied by a different
-project or alias, sase-github adds a deterministic suffix such as `-2`.
+project, `PROJECT_NAME`, or alias, sase-github adds a deterministic suffix such as `-2`.
 
-sase-github also writes a short `PROJECT_ALIASES` value for the repo basename when it is valid and useful. The first
-`owner/foo` repo can get alias `foo`; a second `owner/foo` repo gets the next available alias such as `foo-2`. Existing
+sase-github also writes `PROJECT_NAME` to the repo basename when it is valid and useful. The first `owner/foo` repo can
+get `PROJECT_NAME: foo`; a second `owner/foo` repo gets the next available display name such as `foo_1`. Existing
 basename ProjectSpecs are reused when their `WORKSPACE_DIR` already matches the GitHub workspace, so no automatic
-migration or rename is required. Inspect or adjust generated aliases with `sase project alias`.
+migration or rename is required. Existing auto-aliased GitHub projects are also left unchanged and keep resolving via
+their `PROJECT_ALIASES` entry.

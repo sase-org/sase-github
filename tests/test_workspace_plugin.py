@@ -38,7 +38,7 @@ class TestResolveGhRef:
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
-    def test_repo_path_creates_canonical_project_and_alias(
+    def test_repo_path_creates_canonical_project_and_name(
         self, mock_branch: MagicMock
     ) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -61,12 +61,13 @@ class TestResolveGhRef:
             assert result.primary_workspace_dir == primary
             assert result.checkout_target == "origin/main"
             assert f"WORKSPACE_DIR: {primary}\n" in content
-            assert "PROJECT_ALIASES: myrepo\n" in content
+            assert "PROJECT_NAME: myrepo\n" in content
+            assert "PROJECT_ALIASES" not in content
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
-    def test_duplicate_repo_basename_gets_distinct_alias(
+    def test_duplicate_repo_basename_gets_distinct_name(
         self, mock_branch: MagicMock
     ) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -82,8 +83,8 @@ class TestResolveGhRef:
             second_file = Path(second.project_file)
             assert first.project_name == "gh_foo-org__foo"
             assert second.project_name == "gh_bar-org__foo"
-            assert "PROJECT_ALIASES: foo\n" in first_file.read_text(encoding="utf-8")
-            assert "PROJECT_ALIASES: foo-2\n" in second_file.read_text(encoding="utf-8")
+            assert "PROJECT_NAME: foo\n" in first_file.read_text(encoding="utf-8")
+            assert "PROJECT_NAME: foo_1\n" in second_file.read_text(encoding="utf-8")
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
@@ -111,6 +112,30 @@ class TestResolveGhRef:
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
+    def test_repo_path_reuses_existing_auto_aliased_project_without_migration(
+        self, mock_branch: MagicMock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            primary = _github_workspace(home, "alice", "myrepo")
+            project_file = _write_project(
+                home,
+                "gh_alice__myrepo",
+                f"WORKSPACE_DIR: {primary}\nPROJECT_ALIASES: myrepo\nNAME: legacy\n",
+            )
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
+                result = resolve_gh_ref("alice/myrepo")
+
+            content = project_file.read_text(encoding="utf-8")
+            assert result.project_name == "gh_alice__myrepo"
+            assert result.project_file == str(project_file)
+            assert "PROJECT_ALIASES: myrepo\n" in content
+            assert "PROJECT_NAME" not in content
+
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
     def test_repo_path_duplicate_basename_no_longer_conflicts(
         self, mock_branch: MagicMock
     ) -> None:
@@ -129,7 +154,8 @@ class TestResolveGhRef:
             content = Path(result.project_file).read_text(encoding="utf-8")
             assert result.project_name == "gh_alice__foo"
             assert result.primary_workspace_dir == primary
-            assert "PROJECT_ALIASES: foo-2\n" in content
+            assert "PROJECT_NAME: foo_1\n" in content
+            assert "PROJECT_ALIASES" not in content
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
@@ -150,14 +176,14 @@ class TestResolveGhRef:
                 result = resolve_gh_ref("alice/foo")
 
             assert result.project_name == "gh_alice__foo-2"
-            assert "PROJECT_ALIASES: foo\n" in Path(result.project_file).read_text(
+            assert "PROJECT_NAME: foo\n" in Path(result.project_file).read_text(
                 encoding="utf-8"
             )
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
-    def test_project_alias_shorthand_resolves_canonical_project(
+    def test_project_name_shorthand_resolves_canonical_project(
         self, mock_branch: MagicMock
     ) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -168,7 +194,7 @@ class TestResolveGhRef:
             with path_patch, env_patch:
                 resolve_gh_ref("foo-org/foo")
                 canonical = resolve_gh_ref("bar-org/foo")
-                alias = resolve_gh_ref("foo-2")
+                alias = resolve_gh_ref("foo_1")
 
             assert alias.project_name == canonical.project_name
             assert alias.project_file == canonical.project_file
