@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.3](https://github.com/sase-org/sase-github/compare/v0.1.2...v0.1.3) (2026-06-29)
+
+
+### Features
+
+* write project display names for repo refs ([65ddc1d](https://github.com/sase-org/sase-github/commit/65ddc1d6dd9efe152897449ffa7eb421d8694802))
+
+
+### Documentation
+
+* add tiny field note ([d1d6563](https://github.com/sase-org/sase-github/commit/d1d6563822f3e48ec2504fed9156d1d0bbabb8a1))
+
 ## [0.1.2](https://github.com/sase-org/sase-github/compare/v0.1.1...v0.1.2) (2026-06-13)
 
 
