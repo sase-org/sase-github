@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/sase-org/sase-github/compare/v0.1.3...v0.1.4) (2026-06-30)
+
+
+### Bug Fixes
+
+* require current sase package ([61c3e34](https://github.com/sase-org/sase-github/commit/61c3e345c6832c9575694951e1337ef4f3c24aaf))
+
 ## [0.1.3](https://github.com/sase-org/sase-github/compare/v0.1.2...v0.1.3) (2026-06-29)
 
 
