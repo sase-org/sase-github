@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  SASE_CORE_REF: v0.1.3
+  SASE_CORE_REF: master
   SASE_CORE_PATH: .ci/sase
 
 jobs:
