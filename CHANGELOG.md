@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.5](https://github.com/sase-org/sase-github/compare/v0.1.4...v0.1.5) (2026-07-01)
+
+
+### Features
+
+* support GitHub Enterprise hosts ([e1f3b02](https://github.com/sase-org/sase-github/commit/e1f3b02f469cbcbea9711697ffa3d7f5d0115597))
+
+
+### Documentation
+
+* document managed Enterprise setup ([baf704a](https://github.com/sase-org/sase-github/commit/baf704a8859a081a7d42ed6639504c3ee6354872))
+
 ## [0.1.4](https://github.com/sase-org/sase-github/compare/v0.1.3...v0.1.4) (2026-06-30)
 
 
