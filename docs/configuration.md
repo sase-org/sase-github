@@ -1,5 +1,24 @@
 # Configuration
 
+## `github_hosts`
+
+The `github_hosts` setting controls which GitHub hosts sase-github recognizes. Add it to your sase config file
+(`~/.config/sase/sase.yml`) when you use GitHub Enterprise Server or another self-hosted GitHub instance:
+
+```yaml
+github_hosts:
+  - github.mycompany.com
+  - github.com
+```
+
+**Effect:** sase-github claims repositories whose remote origin host matches one of these hosts. `github.com` is always
+included implicitly, so public GitHub keeps working even if you only configure an Enterprise host.
+
+The first configured host is the default for bare `#gh(owner/repo)` refs. With the example above,
+`#gh(my-org/my-repo)` clones from `github.mycompany.com`. If `github_hosts` is unset, the default host is `github.com`.
+
+Host entries are normalized, so pasted values such as `https://github.mycompany.com/` are accepted.
+
 ## `github_orgs`
 
 The `github_orgs` setting controls how sase-github clones repositories. Add it to your sase config file
@@ -11,8 +30,9 @@ github_orgs:
   - your-org
 ```
 
-**Effect:** When cloning a repo whose owner is in this list, sase-github uses SSH (`git@github.com:user/project.git`).
-For all other repos, it uses HTTPS (`https://github.com/user/project.git`).
+**Effect:** When cloning a repo whose owner is in this list, sase-github uses SSH
+(`git@<github-host>:user/project.git`). For all other repos, it uses HTTPS
+(`https://<github-host>/user/project.git`).
 
 This matters because SSH URLs require an SSH key configured with GitHub, while HTTPS URLs work for public repos without
 authentication (but require a token for push access).
@@ -29,15 +49,20 @@ Currently the default config defines:
 ## Requirements
 
 - **`gh` CLI** — Required for all PR operations. Install from https://cli.github.com/ and authenticate with
-  `gh auth login`.
+  `gh auth login`. For GitHub Enterprise, authenticate to the configured host with
+  `gh auth login --hostname github.mycompany.com`.
 - **Git** — Standard git CLI for repository operations.
 
 ## Workspace Layout
 
 Primary GitHub workspaces are stored under `~/projects/github/<user>/<project>/` when first resolved from a
-`#gh(user/project)` reference. Numbered parallel-work checkouts follow SASE's shared `workspace.root` policy: by default
-they live under the platform state-root namespace, while explicit `workspace.root: adjacent` keeps the legacy
-`~/projects/github/<user>/<project>_<N>/` sibling layout.
+`#gh(user/project)` reference and the default host is `github.com`. For other default hosts, workspaces are namespaced
+by host at `~/projects/github/<host>/<user>/<project>/` to avoid collisions between same-named repos on different
+GitHub installations.
+
+Numbered parallel-work checkouts follow SASE's shared `workspace.root` policy: by default they live under the platform
+state-root namespace, while explicit `workspace.root: adjacent` keeps the legacy
+`~/projects/github/<user>/<project>_<N>/` sibling layout for `github.com` projects.
 
 ## Project Files
 

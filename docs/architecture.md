@@ -23,7 +23,7 @@ Extends `GitCommon` from sase core. Handles low-level VCS operations by wrapping
 
 | Hook                        | Behavior                                                                              |
 | --------------------------- | ------------------------------------------------------------------------------------- |
-| `vcs_classify_repo()`       | Claims repos with `github.com` in their origin URL                                    |
+| `vcs_classify_repo()`       | Claims repos whose origin host is in the configured GitHub host set                   |
 | `vcs_get_change_url()`      | Returns PR URL via `gh pr view --json url`                                            |
 | `vcs_get_cl_number()`       | Returns PR number via `gh pr view --json number`                                      |
 | `vcs_mail()`                | Pushes branch (`git push -u origin`) and creates PR if needed (`gh pr create --fill`) |
@@ -57,8 +57,9 @@ The `resolve_gh_ref()` function supports three dispatch modes for `#gh` referenc
 
 When the ref contains `/`, it's treated as a GitHub repo path:
 
-- Derives workspace from `~/projects/github/<user>/<project>/`
-- Clones the repo if it doesn't exist (SSH for orgs in `github_orgs`, HTTPS otherwise)
+- Derives workspace from `~/projects/github/<user>/<project>/` for `github.com`, or
+  `~/projects/github/<host>/<user>/<project>/` for other default hosts
+- Clones the repo from the default GitHub host if it doesn't exist (SSH for orgs in `github_orgs`, HTTPS otherwise)
 - Reuses an existing SASE ProjectSpec whose normalized `WORKSPACE_DIR` already points at that workspace
 - Otherwise creates a canonical project name from the repo identity, normally `gh_<user>__<project>`
 - Adds a deterministic suffix such as `-2` only if that canonical project name is already occupied by a different
@@ -104,5 +105,6 @@ When submitting a GitHub ChangeSpec (`ws_submit`):
 
 ## Config Helper
 
-`config.py` provides `get_github_orgs()` which reads the `github_orgs` list from the merged sase config. This determines
-whether repos are cloned via SSH (for orgs the user has push access to) or HTTPS.
+`config.py` provides `get_github_hosts()` and `get_default_github_host()` for host matching and bare `#gh(owner/repo)`
+clone refs. Configured hosts are normalized, and `github.com` is always included implicitly. It also provides
+`get_github_orgs()`, which determines whether repos are cloned via SSH (for orgs the user has push access to) or HTTPS.

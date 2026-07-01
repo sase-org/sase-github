@@ -23,6 +23,12 @@ def test_extract_pr_number_from_url() -> None:
     assert _extract_pr_number("https://github.com/org/repo/pull/42") == "42"
 
 
+def test_extract_pr_number_from_enterprise_url() -> None:
+    assert _extract_pr_number("https://github.enterprise.test/org/repo/pull/42") == (
+        "42"
+    )
+
+
 def test_extract_pr_number_none() -> None:
     assert _extract_pr_number(None) is None
 

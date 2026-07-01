@@ -8,9 +8,9 @@
 ## Overview
 
 **sase-github** is a plugin for [sase](https://github.com/sase-org/sase) that adds GitHub-specific VCS and workspace
-support. It provides the `GitHubPlugin` VCS provider and `GitHubWorkspacePlugin` workspace provider for GitHub-hosted
-repositories, integrating with the `gh` CLI for pull request creation, management, and submission, along with
-GitHub-specific xprompt workflows.
+support. It provides the `GitHubPlugin` VCS provider and `GitHubWorkspacePlugin` workspace provider for repositories
+hosted on `github.com` or configured GitHub Enterprise hosts, integrating with the `gh` CLI for pull request creation,
+management, and submission, along with GitHub-specific xprompt workflows.
 
 ## Installation
 
@@ -41,6 +41,8 @@ Requires `sase>=0.1.3` as a dependency (installed automatically).
 
 ### Configuration
 
+- **`get_github_hosts()` / `get_default_github_host()`** — Read `github_hosts` from sase config to recognize GitHub
+  Enterprise hosts and choose the default host for `#gh(owner/repo)` clone refs
 - **`get_github_orgs()`** — Reads `github_orgs` from sase config to determine SSH vs HTTPS clone URLs for
   organizations/users with push access
 
@@ -61,15 +63,16 @@ itself with sase core:
 - **`sase_workspace`** — Registers `GitHubWorkspacePlugin` as the `github` workspace provider
 - **`sase_xprompts`** — Makes GitHub xprompts discoverable via plugin discovery
 
-When sase detects a GitHub-hosted repository (via `gh` CLI), it automatically loads `GitHubPlugin` and
-`GitHubWorkspacePlugin` to handle VCS operations like PR creation, branch management, commit workflows, and PR
-submission.
+When sase detects a repository whose remote origin host is in the configured GitHub host set, it automatically loads
+`GitHubPlugin` and `GitHubWorkspacePlugin` to handle VCS operations like PR creation, branch management, commit
+workflows, and PR submission.
 
 ## Requirements
 
 - Python 3.12+
 - [sase](https://github.com/sase-org/sase) >= 0.1.3
-- [gh](https://cli.github.com/) CLI (for GitHub API operations)
+- [gh](https://cli.github.com/) CLI (for GitHub API operations). For GitHub Enterprise, run
+  `gh auth login --hostname <host>` for each configured Enterprise host.
 
 ## Development
 
@@ -93,7 +96,7 @@ src/sase_github/
 ├── __init__.py              # Package exports
 ├── plugin.py                # GitHubPlugin VCS implementation
 ├── workspace_plugin.py      # GitHubWorkspacePlugin workspace implementation
-├── config.py                # GitHub config helpers (org/user list)
+├── config.py                # GitHub config helpers (host and org/user lists)
 ├── scripts/
 │   ├── gh_setup.py                 # Setup step for #gh workflow
 │   └── new_pr_desc_get_context.py  # Context retrieval for PR description generation

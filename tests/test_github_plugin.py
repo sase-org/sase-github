@@ -42,6 +42,65 @@ def test_github_plugin_is_command_runner() -> None:
     assert isinstance(plugin, CommandRunner)
 
 
+# === Tests for repository classification ===
+
+
+def _classify_origin_url(url: str, hosts: list[str]) -> str | None:
+    plugin = GitHubPlugin()
+    with (
+        patch("sase_github.plugin.get_github_hosts", return_value=hosts),
+        patch("sase_github.plugin.subprocess.run") as mock_run,
+    ):
+        mock_run.return_value = MagicMock(returncode=0, stdout=f"{url}\n", stderr="")
+        return plugin.vcs_classify_repo("/workspace")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/user/repo.git",
+        "git@github.com:user/repo.git",
+        "ssh://git@github.com/user/repo.git",
+    ],
+)
+def test_vcs_classify_repo_github_com_url_forms(url: str) -> None:
+    assert _classify_origin_url(url, ["github.com"]) == "github"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.enterprise.test/user/repo.git",
+        "git@github.enterprise.test:user/repo.git",
+        "ssh://git@github.enterprise.test/user/repo.git",
+    ],
+)
+def test_vcs_classify_repo_configured_enterprise_url_forms(url: str) -> None:
+    assert _classify_origin_url(url, ["github.enterprise.test", "github.com"]) == (
+        "github"
+    )
+
+
+def test_vcs_classify_repo_unconfigured_host_returns_none() -> None:
+    assert (
+        _classify_origin_url(
+            "https://github.other.test/user/repo.git",
+            ["github.enterprise.test", "github.com"],
+        )
+        is None
+    )
+
+
+def test_vcs_classify_repo_uses_host_equality_not_substring() -> None:
+    assert (
+        _classify_origin_url(
+            "https://example.test/github.com/user/repo.git",
+            ["github.com"],
+        )
+        is None
+    )
+
+
 # === Tests for core git operations via plugin ===
 
 
@@ -118,9 +177,7 @@ def test_plugin_abandon_change_already_closed(
     mock_run: MagicMock, github_provider: VCSPluginManager
 ) -> None:
     """abandon_change succeeds when PR is already closed."""
-    mock_run.return_value = MagicMock(
-        returncode=1, stdout="", stderr="already closed"
-    )
+    mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="already closed")
     success, error = github_provider.abandon_change(
         "https://github.com/user/repo/pull/42", "feature-branch", "/workspace"
     )
@@ -134,9 +191,7 @@ def test_plugin_abandon_change_not_found(
     mock_run: MagicMock, github_provider: VCSPluginManager
 ) -> None:
     """abandon_change succeeds when PR is not found."""
-    mock_run.return_value = MagicMock(
-        returncode=1, stdout="", stderr="not found"
-    )
+    mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="not found")
     success, error = github_provider.abandon_change(
         "https://github.com/user/repo/pull/42", "feature-branch", "/workspace"
     )
@@ -150,9 +205,7 @@ def test_plugin_abandon_change_failure(
     mock_run: MagicMock, github_provider: VCSPluginManager
 ) -> None:
     """abandon_change returns error on unexpected failure."""
-    mock_run.return_value = MagicMock(
-        returncode=1, stdout="", stderr="network error"
-    )
+    mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="network error")
     success, error = github_provider.abandon_change(
         "https://github.com/user/repo/pull/42", "feature-branch", "/workspace"
     )
@@ -520,9 +573,7 @@ def test_direct_abandon_change_success(mock_run: MagicMock) -> None:
 @patch(_MOCK_TARGET)
 def test_direct_abandon_change_already_closed(mock_run: MagicMock) -> None:
     """Test GitHubPlugin.vcs_abandon_change when PR is already closed."""
-    mock_run.return_value = MagicMock(
-        returncode=1, stdout="", stderr="already closed"
-    )
+    mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="already closed")
 
     plugin = GitHubPlugin()
     success, error = plugin.vcs_abandon_change(

@@ -10,6 +10,7 @@ import subprocess
 
 from sase.vcs_provider._hookspec import hookimpl
 from sase.vcs_provider.plugins._git_common import GitCommon
+from sase_github.config import get_github_hosts, normalize_github_host
 
 
 class GitHubPlugin(GitCommon):
@@ -17,7 +18,7 @@ class GitHubPlugin(GitCommon):
 
     @hookimpl
     def vcs_classify_repo(self, git_dir: str) -> str | None:
-        """Claim repos with ``github.com`` in their origin URL."""
+        """Claim repos whose origin host is a configured GitHub host."""
         try:
             result = subprocess.run(
                 ["git", "config", "--get", "remote.origin.url"],
@@ -34,7 +35,8 @@ class GitHubPlugin(GitCommon):
             return None
 
         url = result.stdout.strip()
-        if "github.com" in url:
+        host = normalize_github_host(url)
+        if host in get_github_hosts():
             return "github"
         return None
 
@@ -65,9 +67,7 @@ class GitHubPlugin(GitCommon):
         return (True, None)
 
     @hookimpl
-    def vcs_get_change_body(
-        self, change_ref: str, cwd: str
-    ) -> tuple[bool, str | None]:
+    def vcs_get_change_body(self, change_ref: str, cwd: str) -> tuple[bool, str | None]:
         out = self._run(
             ["gh", "pr", "view", change_ref, "--json", "body", "-q", ".body"], cwd
         )

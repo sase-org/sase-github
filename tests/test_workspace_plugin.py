@@ -9,6 +9,9 @@ import pytest
 
 from sase_github.workspace_plugin import (
     GitHubWorkspacePlugin,
+    _clone_gh_repo,
+    _extract_pr_number,
+    _github_workspace_dir,
     resolve_gh_ref,
 )
 
@@ -32,6 +35,125 @@ def _home_patches(home: Path) -> tuple[object, object]:
         patch("sase_github.workspace_plugin.Path.home", return_value=home),
         patch.dict(os.environ, {"SASE_HOME": str(home / ".sase")}),
     )
+
+
+@pytest.fixture(autouse=True)
+def _default_github_host() -> object:
+    with patch("sase_github.config.get_default_github_host", return_value="github.com"):
+        yield
+
+
+class TestHostAwareWorkspace:
+    def test_github_com_workspace_path_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            with patch("sase_github.workspace_plugin.Path.home", return_value=home):
+                assert _github_workspace_dir("alice", "repo", host="github.com") == (
+                    str(home / "projects" / "github" / "alice" / "repo") + "/"
+                )
+
+    def test_enterprise_workspace_path_is_namespaced_by_host(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            with patch("sase_github.workspace_plugin.Path.home", return_value=home):
+                assert _github_workspace_dir(
+                    "alice",
+                    "repo",
+                    host="github.enterprise.test",
+                ) == (
+                    str(
+                        home
+                        / "projects"
+                        / "github"
+                        / "github.enterprise.test"
+                        / "alice"
+                        / "repo"
+                    )
+                    + "/"
+                )
+
+    def test_clone_uses_enterprise_https_url(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            target = str(Path(d) / "repo")
+            with (
+                patch("sase_github.config.get_github_orgs", return_value=[]),
+                patch("sase_github.workspace_plugin.subprocess.run") as mock_run,
+            ):
+                _clone_gh_repo(
+                    "alice",
+                    "repo",
+                    target,
+                    host="github.enterprise.test",
+                )
+
+        assert mock_run.call_args[0][0] == [
+            "git",
+            "clone",
+            "https://github.enterprise.test/alice/repo.git",
+            target,
+        ]
+
+    def test_clone_uses_enterprise_ssh_url_for_configured_org(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            target = str(Path(d) / "repo")
+            with (
+                patch("sase_github.config.get_github_orgs", return_value=["alice"]),
+                patch("sase_github.workspace_plugin.subprocess.run") as mock_run,
+            ):
+                _clone_gh_repo(
+                    "alice",
+                    "repo",
+                    target,
+                    host="github.enterprise.test",
+                )
+
+        assert mock_run.call_args[0][0] == [
+            "git",
+            "clone",
+            "git@github.enterprise.test:alice/repo.git",
+            target,
+        ]
+
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
+    def test_repo_path_uses_default_enterprise_host(
+        self,
+        mock_branch: MagicMock,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            path_patch, env_patch = _home_patches(home)
+            with (
+                path_patch,
+                env_patch,
+                patch(
+                    "sase_github.config.get_default_github_host",
+                    return_value="github.enterprise.test",
+                ),
+                patch("sase_github.config.get_github_orgs", return_value=[]),
+                patch("sase_github.workspace_plugin.subprocess.run") as mock_run,
+            ):
+                result = resolve_gh_ref("alice/repo")
+
+        expected = (
+            str(
+                home
+                / "projects"
+                / "github"
+                / "github.enterprise.test"
+                / "alice"
+                / "repo"
+            )
+            + "/"
+        )
+        assert result.primary_workspace_dir == expected
+        assert mock_run.call_args[0][0] == [
+            "git",
+            "clone",
+            "https://github.enterprise.test/alice/repo.git",
+            expected.rstrip("/"),
+        ]
 
 
 class TestResolveGhRef:
@@ -360,3 +482,28 @@ class TestDetectWorkflowTypeForProject:
             with open(spec, "w") as f:
                 f.write(f"WORKSPACE_DIR: {workspace}\nNAME: cl\n")
             assert plugin.ws_detect_workflow_type(project_file=spec) == "gh"
+
+
+class TestPrUrlParsing:
+    def test_extract_change_identifier_accepts_enterprise_pr_url(self) -> None:
+        plugin = GitHubWorkspacePlugin()
+
+        assert plugin.ws_extract_change_identifier(
+            "https://github.enterprise.test/user/repo/pull/42"
+        ) == ("42", "git")
+
+    def test_extract_pr_number_accepts_enterprise_pr_url(self) -> None:
+        assert (
+            _extract_pr_number("https://github.enterprise.test/user/repo/pull/42")
+            == "42"
+        )
+
+    def test_supports_reviewer_comments_accepts_enterprise_url(self) -> None:
+        plugin = GitHubWorkspacePlugin()
+
+        assert (
+            plugin.ws_supports_reviewer_comments(
+                "https://github.enterprise.test/user/repo/pull/42"
+            )
+            is False
+        )

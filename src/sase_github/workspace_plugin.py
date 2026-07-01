@@ -25,6 +25,9 @@ from sase.workspace_provider.utils import (
 if TYPE_CHECKING:
     from sase.core.project_lifecycle_wire import ProjectRecordWire
 
+_PR_URL_RE = re.compile(r"https?://[^/]+/.+?/pull/(\d+)")
+_HOSTED_URL_RE = re.compile(r"https?://[^/]+/")
+
 
 class GitHubWorkspacePlugin:
     """Workspace provider plugin for GitHub-hosted projects."""
@@ -96,7 +99,7 @@ class GitHubWorkspacePlugin:
     @hookimpl
     def ws_extract_change_identifier(self, cl_url: str) -> tuple[str, str] | None:
         """Extract PR number from a GitHub PR URL."""
-        match = re.match(r"https?://github\.com/.+/pull/(\d+)", cl_url)
+        match = _PR_URL_RE.match(cl_url)
         if match:
             return (match.group(1), "git")
         return None
@@ -116,7 +119,7 @@ class GitHubWorkspacePlugin:
     @hookimpl
     def ws_supports_reviewer_comments(self, cl_url: str) -> bool | None:
         """GitHub does not support reviewer comments via critique_comments."""
-        if re.match(r"https?://github\.com/", cl_url):
+        if _HOSTED_URL_RE.match(cl_url):
             return False
         return None
 
@@ -314,8 +317,7 @@ class GitHubWorkspacePlugin:
                 return _submit_via_pr_merge(changespec, ws_dir, rich_console)
             return (
                 False,
-                "GitHub project has no PR for this branch. "
-                "Create a PR first with #pr.",
+                "GitHub project has no PR for this branch. Create a PR first with #pr.",
             )
         finally:
             release_workspace(
@@ -331,15 +333,25 @@ class GitHubWorkspacePlugin:
 # ── Private helpers ─────────────────────────────────────────────────
 
 
-def _clone_gh_repo(user: str, project: str, target_dir: str) -> None:
+def _clone_gh_repo(
+    user: str,
+    project: str,
+    target_dir: str,
+    *,
+    host: str | None = None,
+) -> None:
     """Clone a GitHub repo to the target directory."""
-    from sase_github.config import get_github_orgs
+    from sase_github.config import get_default_github_host, get_github_orgs
 
+    github_host = host or get_default_github_host()
     gh_orgs = get_github_orgs()
     if user in gh_orgs:
-        url = f"git@github.com:{user}/{project}.git"
+        if ":" in github_host:
+            url = f"ssh://git@{github_host}/{user}/{project}.git"
+        else:
+            url = f"git@{github_host}:{user}/{project}.git"
     else:
-        url = f"https://github.com/{user}/{project}.git"
+        url = f"https://{github_host}/{user}/{project}.git"
     parent = os.path.dirname(target_dir.rstrip("/"))
     os.makedirs(parent, exist_ok=True)
 
@@ -361,8 +373,14 @@ def _projects_base() -> Path:
     return Path.home() / ".sase" / "projects"
 
 
-def _github_workspace_dir(user: str, project: str) -> str:
-    return str(Path.home() / "projects" / "github" / user / project) + "/"
+def _github_workspace_dir(user: str, project: str, host: str | None = None) -> str:
+    from sase_github.config import DEFAULT_GITHUB_HOST, get_default_github_host
+
+    github_host = host or get_default_github_host()
+    base = Path.home() / "projects" / "github"
+    if github_host == DEFAULT_GITHUB_HOST:
+        return str(base / user / project) + "/"
+    return str(base / github_host / user / project) + "/"
 
 
 def _normalized_workspace_dir(workspace_dir: str | None) -> str | None:
@@ -506,8 +524,11 @@ def _resolved_ref_for_record(
 
 
 def _resolve_repo_path_ref(user: str, project: str) -> ResolvedRef:
+    from sase_github.config import get_default_github_host
+
     projects_base = _projects_base()
-    primary_workspace_dir = _github_workspace_dir(user, project)
+    github_host = get_default_github_host()
+    primary_workspace_dir = _github_workspace_dir(user, project, host=github_host)
     records = _list_project_records(projects_base)
     existing_record = _find_project_record_for_workspace(
         records,
@@ -515,7 +536,7 @@ def _resolve_repo_path_ref(user: str, project: str) -> ResolvedRef:
     )
 
     if not os.path.isdir(primary_workspace_dir.rstrip("/")):
-        _clone_gh_repo(user, project, primary_workspace_dir)
+        _clone_gh_repo(user, project, primary_workspace_dir, host=github_host)
 
     if existing_record is None:
         project_name = _allocate_canonical_project_name(user, project, records)
@@ -612,7 +633,7 @@ def _extract_pr_number(cl_url: str | None) -> str | None:
     """Extract a PR number from a GitHub PR URL, or return ``None``."""
     if not cl_url:
         return None
-    match = re.match(r"https?://github\.com/.+/pull/(\d+)", cl_url)
+    match = _PR_URL_RE.match(cl_url)
     return match.group(1) if match else None
 
 
