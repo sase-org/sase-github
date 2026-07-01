@@ -6,7 +6,7 @@ Use this checklist for GitHub Enterprise Server or another self-hosted GitHub ho
 
 1. **Install SASE and `sase-github`.** Use the
    [README installation routes](../README.md#installation): the SASE Admin Center Updates tab is the recommended path
-   for an existing managed install, while `uv tool install sase --python 3.12 --with sase-github` installs SASE and the
+   for an existing managed install, while `uv tool install sase --with sase-github` installs SASE and the
    plugin together. The core SASE [plugin docs](https://github.com/sase-org/sase/blob/master/docs/plugins.md) also cover
    `sase plugin install github` for existing installs.
 2. **Authenticate `gh` to the Enterprise host.**

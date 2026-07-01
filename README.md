@@ -30,7 +30,7 @@ and [`sase plugin` commands](https://github.com/sase-org/sase/blob/master/docs/p
 ### Alternative: install SASE and the plugin together
 
 ```bash
-uv tool install sase --python 3.12 --with sase-github
+uv tool install sase --with sase-github
 ```
 
 Repeat `--with` for additional plugins, for example `--with sase-github --with sase-telegram`. Add `--force` to replace
