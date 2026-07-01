@@ -1,5 +1,38 @@
 # Configuration
 
+## GitHub Enterprise setup
+
+Use this checklist for GitHub Enterprise Server or another self-hosted GitHub host:
+
+1. **Install SASE and `sase-github`.** Use the
+   [README installation routes](../README.md#installation): the SASE Admin Center Updates tab is the recommended path
+   for an existing managed install, while `uv tool install sase --python 3.12 --with sase-github` installs SASE and the
+   plugin together. The core SASE [plugin docs](https://github.com/sase-org/sase/blob/master/docs/plugins.md) also cover
+   `sase plugin install github` for existing installs.
+2. **Authenticate `gh` to the Enterprise host.**
+
+   ```bash
+   gh auth login --hostname github.mycompany.com
+   ```
+
+   Repo-scoped `gh` commands auto-detect the host from the git remote, so this host-specific login is enough for PR
+   operations once the repo is cloned.
+3. **Set `github_hosts` in `~/.config/sase/sase.yml`.** **Put your Enterprise host first** if you want bare
+   `#gh(owner/repo)` refs to clone from Enterprise. `github.com` is always included implicitly, but the first configured
+   host is the default for bare refs; listing `github.com` first means bare refs default there instead. See
+   [`github_hosts`](#github_hosts).
+4. **Optionally enable SSH clones.** Add owners to [`github_orgs`](#github_orgs) when you have an SSH key registered on
+   that GitHub host and want SASE to clone those repos with `git@<host>:owner/repo.git`. Owners not listed in
+   `github_orgs` use HTTPS.
+5. **Verify and resolve a repo.** Run:
+
+   ```bash
+   sase doctor -C plugins.github
+   ```
+
+   Then resolve a repo with `#gh(owner/repo)`. Enterprise workspaces are namespaced by host under
+   `~/projects/github/<host>/<user>/<project>/`; see [Workspace Layout](#workspace-layout).
+
 ## `github_hosts`
 
 The `github_hosts` setting controls which GitHub hosts sase-github recognizes. Add it to your sase config file

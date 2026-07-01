@@ -14,17 +14,39 @@ management, and submission, along with GitHub-specific xprompt workflows.
 
 ## Installation
 
+For a managed SASE install, install `sase-github` into the same `uv tool` environment as `sase` so its entry points are
+discovered by the `sase` command.
+
+### Recommended: SASE Admin Center Updates tab
+
+If SASE is already installed with `uv tool install sase`, open `sase ace`, press `#` for the SASE Admin Center, then go
+to the **Updates** tab (`5`, or `[` / `]`). Highlight `sase-github` in the plugin list (`j` / `k`, or `/` to filter),
+press `i` to install, and confirm the preview modal. The preview shows the exact `uv` command and resolved package set;
+the install runs as a tracked background task and is discovered on the next `sase` run.
+
+See the core SASE docs for the [Updates tab](https://github.com/sase-org/sase/blob/master/docs/configuration.md#updates-tab)
+and [`sase plugin` commands](https://github.com/sase-org/sase/blob/master/docs/plugins.md).
+
+### Alternative: install SASE and the plugin together
+
 ```bash
-pip install sase-github
+uv tool install sase --python 3.12 --with sase-github
 ```
 
-Or with [uv](https://docs.astral.sh/uv/):
+Repeat `--with` for additional plugins, for example `--with sase-github --with sase-telegram`. Add `--force` to replace
+an existing tool install.
+
+### Equivalent CLI for an existing install
 
 ```bash
-uv pip install sase-github
+sase plugin install github
 ```
 
-Requires `sase>=0.1.3` as a dependency (installed automatically).
+`pip install sase-github` is only an escape hatch for non-managed or library-style environments. It is not the normal
+path for a `uv tool`-managed SASE command.
+
+Requires `sase>=0.1.3` as a dependency. For GitHub Enterprise Server or self-hosted GitHub, follow the
+[GitHub Enterprise setup walkthrough](docs/configuration.md#github-enterprise-setup).
 
 ## What's Included
 
@@ -73,6 +95,9 @@ workflows, and PR submission.
 - [sase](https://github.com/sase-org/sase) >= 0.1.3
 - [gh](https://cli.github.com/) CLI (for GitHub API operations). For GitHub Enterprise, run
   `gh auth login --hostname <host>` for each configured Enterprise host.
+
+See [Configuration](docs/configuration.md) for `github_hosts`, `github_orgs`, workspace layout, and the ordered GitHub
+Enterprise setup flow.
 
 ## Development
 
