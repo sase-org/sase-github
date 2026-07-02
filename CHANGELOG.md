@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.6](https://github.com/sase-org/sase-github/compare/v0.1.5...v0.1.6) (2026-07-02)
+
+
+### Bug Fixes
+
+* report closed GitHub PRs in submitted checks ([5ad2168](https://github.com/sase-org/sase-github/commit/5ad2168c1e36cca4b39e4435fff3076f3492dfb5))
+
+
+### Documentation
+
+* drop `--python 3.12` pin from install commands ([4ecc344](https://github.com/sase-org/sase-github/commit/4ecc344987dd7609996d8ee9040a31e4adb7bb96))
+
 ## [0.1.5](https://github.com/sase-org/sase-github/compare/v0.1.4...v0.1.5) (2026-07-01)
 
 
