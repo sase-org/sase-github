@@ -108,12 +108,18 @@ class GitHubWorkspacePlugin:
     def ws_generate_submitted_check_script(
         self, identifier: str, vcs_type: str
     ) -> str | None:
-        """Generate script to check if a GitHub PR is merged."""
+        """Generate script to check if a GitHub PR is merged or closed."""
         if vcs_type != "git":
             return None
         return (
             f"state=$(gh pr view {identifier} --json state -q '.state' 2>/dev/null)\n"
-            f'[ "$state" = "MERGED" ]'
+            'echo "PR state: ${state:-<unavailable>}"\n'
+            'case "$state" in\n'
+            "  MERGED) true ;;\n"
+            "  # Keep this literal in sync with SUBMITTED_CHECK_EXIT_CODE_CLOSED.\n"
+            "  CLOSED) (exit 20) ;;\n"
+            "  *) false ;;\n"
+            "esac"
         )
 
     @hookimpl

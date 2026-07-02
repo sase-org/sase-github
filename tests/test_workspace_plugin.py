@@ -1,11 +1,13 @@
 """Tests for sase_github.workspace_plugin module (GitHub-specific functions)."""
 
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sase.workspace_provider import SUBMITTED_CHECK_EXIT_CODE_CLOSED
 
 from sase_github.workspace_plugin import (
     GitHubWorkspacePlugin,
@@ -37,10 +39,76 @@ def _home_patches(home: Path) -> tuple[object, object]:
     )
 
 
+def _run_submitted_check_script(
+    tmp_path: Path, gh_body: str
+) -> subprocess.CompletedProcess[str]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text(f"#!/bin/bash\n{gh_body}\n", encoding="utf-8")
+    gh.chmod(0o755)
+
+    script = GitHubWorkspacePlugin().ws_generate_submitted_check_script("42", "git")
+    assert script is not None
+
+    script_path = tmp_path / "check.sh"
+    script_path.write_text(f"#!/bin/bash\n{script}\n", encoding="utf-8")
+    script_path.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+    }
+    return subprocess.run(
+        [str(script_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+
 @pytest.fixture(autouse=True)
 def _default_github_host() -> object:
     with patch("sase_github.config.get_default_github_host", return_value="github.com"):
         yield
+
+
+@pytest.mark.parametrize(
+    ("gh_body", "expected_code", "expected_state"),
+    [
+        ("printf 'MERGED\\n'", 0, "MERGED"),
+        ("printf 'CLOSED\\n'", SUBMITTED_CHECK_EXIT_CODE_CLOSED, "CLOSED"),
+        ("printf 'OPEN\\n'", 1, "OPEN"),
+        ("exit 2", 1, "<unavailable>"),
+    ],
+)
+def test_submitted_check_script_reports_pr_state(
+    tmp_path: Path,
+    gh_body: str,
+    expected_code: int,
+    expected_state: str,
+) -> None:
+    result = _run_submitted_check_script(tmp_path, gh_body)
+
+    assert result.returncode == expected_code
+    assert f"PR state: {expected_state}" in result.stdout
+
+
+def test_submitted_check_script_has_no_bare_exit_statement() -> None:
+    script = GitHubWorkspacePlugin().ws_generate_submitted_check_script("42", "git")
+    assert script is not None
+
+    for line in script.splitlines():
+        stripped = line.strip()
+        assert stripped != "exit"
+        assert not stripped.startswith("exit ")
+
+
+def test_submitted_check_closed_literal_matches_sase_contract() -> None:
+    script = GitHubWorkspacePlugin().ws_generate_submitted_check_script("42", "git")
+    assert script is not None
+    assert f"(exit {SUBMITTED_CHECK_EXIT_CODE_CLOSED})" in script
 
 
 class TestHostAwareWorkspace:
