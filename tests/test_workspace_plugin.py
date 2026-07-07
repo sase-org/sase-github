@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sase.workspace_provider import SUBMITTED_CHECK_EXIT_CODE_CLOSED
+from sase.workspace_provider import ResolvedRef, SUBMITTED_CHECK_EXIT_CODE_CLOSED
 
 from sase_github.workspace_plugin import (
     GitHubWorkspacePlugin,
@@ -250,6 +250,7 @@ class TestResolveGhRef:
             assert result.project_file == str(project_file)
             assert result.primary_workspace_dir == primary
             assert result.checkout_target == "origin/main"
+            assert result.canonical_ref == "gh_alice__myrepo"
             assert f"WORKSPACE_DIR: {primary}\n" in content
             assert "PROJECT_NAME: myrepo\n" in content
             assert "PROJECT_ALIASES" not in content
@@ -373,6 +374,25 @@ class TestResolveGhRef:
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
+    def test_alias_resolves_to_canonical_ref_after_repo_path_first_use(
+        self, mock_branch: MagicMock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            _github_workspace(home, "alice", "myrepo")
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
+                first = resolve_gh_ref("alice/myrepo")
+                alias = resolve_gh_ref("myrepo")
+
+            assert alias.project_name == first.project_name
+            assert alias.project_file == first.project_file
+            assert alias.primary_workspace_dir == first.primary_workspace_dir
+            assert alias.canonical_ref == first.project_name
+
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
     def test_project_name_shorthand_resolves_canonical_project(
         self, mock_branch: MagicMock
     ) -> None:
@@ -389,6 +409,7 @@ class TestResolveGhRef:
             assert alias.project_name == canonical.project_name
             assert alias.project_file == canonical.project_file
             assert alias.primary_workspace_dir == canonical.primary_workspace_dir
+            assert alias.canonical_ref == canonical.project_name
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
@@ -408,6 +429,7 @@ class TestResolveGhRef:
                 assert result.project_name == "myproj"
                 assert result.primary_workspace_dir == "/work/myproj/"
                 assert result.checkout_target == "origin/main"
+                assert result.canonical_ref is None
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
@@ -428,6 +450,7 @@ class TestResolveGhRef:
                 assert result.project_name == "myproj"
                 assert result.primary_workspace_dir == "/work/myproj/"
                 assert result.checkout_target == "origin/main"
+                assert result.canonical_ref is None
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
@@ -457,6 +480,7 @@ class TestResolveGhRef:
                 result = resolve_gh_ref("my-feature")
                 assert result.checkout_target == "origin/my-feature"
                 assert result.project_name == "proj"
+                assert result.canonical_ref is None
 
     @patch("sase.ace.changespec.find_all_changespecs")
     def test_changespec_no_workspace_dir(self, mock_find: MagicMock) -> None:
@@ -490,6 +514,26 @@ class TestResolveGhRef:
     def test_invalid_repo_path(self) -> None:
         with pytest.raises(ValueError, match="expected 'user/project'"):
             resolve_gh_ref("a/b/c")
+
+
+class TestWsResolveRef:
+    def test_passes_canonical_ref_through(self) -> None:
+        resolved = ResolvedRef(
+            project_file="/tmp/gh_alice__myrepo.sase",
+            project_name="gh_alice__myrepo",
+            primary_workspace_dir="/tmp/myrepo/",
+            checkout_target="origin/main",
+            canonical_ref="gh_alice__myrepo",
+        )
+
+        with patch(
+            "sase_github.workspace_plugin.resolve_gh_ref", return_value=resolved
+        ):
+            result = GitHubWorkspacePlugin().ws_resolve_ref("alice/myrepo", "gh")
+
+        assert result is not None
+        assert result.project_name == "gh_alice__myrepo"
+        assert result.canonical_ref == "gh_alice__myrepo"
 
 
 # ── detect_workflow_type (via plugin) ────────────────────────────────

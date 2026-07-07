@@ -94,6 +94,7 @@ class GitHubWorkspacePlugin:
             project_name=r.project_name,
             primary_workspace_dir=r.primary_workspace_dir,
             checkout_target=r.checkout_target,
+            canonical_ref=r.canonical_ref,
         )
 
     @hookimpl
@@ -526,6 +527,7 @@ def _resolved_ref_for_record(
         project_name=record.project_name,
         primary_workspace_dir=workspace_dir,
         checkout_target=get_default_branch(workspace_dir),
+        canonical_ref=record.project_name,
     )
 
 
@@ -565,6 +567,7 @@ def _resolve_repo_path_ref(user: str, project: str) -> ResolvedRef:
         project_name=project_name,
         primary_workspace_dir=primary_workspace_dir,
         checkout_target=checkout_target,
+        canonical_ref=project_name,
     )
 
 
