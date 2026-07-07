@@ -12,9 +12,11 @@ _setup:
 install:
     @[ -x {{ venv_bin }}/python ] || uv venv {{ venv_dir }}
     @if [ -n "${SASE_CORE_PATH:-}" ]; then \
-        uv pip install -e "${SASE_CORE_PATH}"; \
+        printf -- '-e %s\n' "$(realpath "${SASE_CORE_PATH}")" > {{ venv_dir }}/sase-overrides.txt; \
+        uv pip install --overrides {{ venv_dir }}/sase-overrides.txt -e ".[dev]"; \
+    else \
+        uv pip install -e ".[dev]"; \
     fi
-    uv pip install -e ".[dev]"
 
 lint: _setup
     {{ venv_bin }}/ruff check src/ tests/
