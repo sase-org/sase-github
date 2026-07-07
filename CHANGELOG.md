@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.7](https://github.com/sase-org/sase-github/compare/v0.1.6...v0.1.7) (2026-07-07)
+
+
+### Features
+
+* use PR terminology for GitHub review hooks ([45cb817](https://github.com/sase-org/sase-github/commit/45cb817503216b4def7f4bd8ef752a285a781323))
+
+
+### Bug Fixes
+
+* preserve canonical refs in GitHub resolution ([73e3c4b](https://github.com/sase-org/sase-github/commit/73e3c4b8e66e79911c305b6aad5677d658862830))
+
 ## [0.1.6](https://github.com/sase-org/sase-github/compare/v0.1.5...v0.1.6) (2026-07-02)
 
 
