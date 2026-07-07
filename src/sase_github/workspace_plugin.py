@@ -11,7 +11,7 @@ import json
 import os
 import re
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -25,6 +25,7 @@ from sase.workspace_provider import (
 )
 from sase.workspace_provider.utils import (
     get_default_branch,
+    non_interactive_git_env,
     parse_workspace_dir,
     set_workspace_dir,
 )
@@ -113,6 +114,13 @@ class GitHubWorkspacePlugin:
             checkout_target=r.checkout_target,
             canonical_ref=r.canonical_ref,
         )
+
+    @hookimpl
+    def ws_peek_ref(self, ref: str, workflow_type: str) -> ResolvedRef | None:
+        """Read-only ``#gh`` lookup for presentation paths."""
+        if workflow_type != "gh":
+            return None
+        return peek_gh_ref(ref)
 
     @hookimpl
     def ws_list_repo_candidates(
@@ -380,32 +388,63 @@ def _clone_gh_repo(
     host: str | None = None,
 ) -> None:
     """Clone a GitHub repo to the target directory."""
-    from sase_github.config import get_default_github_host, get_github_orgs
+    from sase_github.config import get_default_github_host
 
     github_host = host or get_default_github_host()
-    gh_orgs = get_github_orgs()
-    if user in gh_orgs:
-        if ":" in github_host:
-            url = f"ssh://git@{github_host}/{user}/{project}.git"
-        else:
-            url = f"git@{github_host}:{user}/{project}.git"
-    else:
-        url = f"https://{github_host}/{user}/{project}.git"
     parent = os.path.dirname(target_dir.rstrip("/"))
     os.makedirs(parent, exist_ok=True)
 
-    try:
-        subprocess.run(
-            ["git", "clone", url, target_dir.rstrip("/")],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        error_msg = f"git clone failed for {url}"
-        if e.stderr:
-            error_msg += f": {e.stderr.strip()}"
-        raise RuntimeError(error_msg) from e
+    attempts = (
+        ("SSH", _github_ssh_url(github_host, user, project)),
+        ("HTTPS", _github_https_url(github_host, user, project)),
+    )
+    failures: list[str] = []
+    first_error: BaseException | None = None
+    for label, url in attempts:
+        try:
+            subprocess.run(
+                ["git", "clone", url, target_dir.rstrip("/")],
+                capture_output=True,
+                text=True,
+                check=True,
+                env=non_interactive_git_env(),
+                stdin=subprocess.DEVNULL,
+            )
+            return
+        except subprocess.CalledProcessError as e:
+            if first_error is None:
+                first_error = e
+            failures.append(_format_clone_failure(label, url, e))
+        except FileNotFoundError as e:
+            raise RuntimeError("git clone failed: git command not found") from e
+
+    detail = "\n".join(failures)
+    error_msg = f"git clone failed for {user}/{project}"
+    if detail:
+        error_msg += f":\n{detail}"
+    raise RuntimeError(error_msg) from first_error
+
+
+def _github_ssh_url(host: str, user: str, project: str) -> str:
+    if ":" in host:
+        return f"ssh://git@{host}/{user}/{project}.git"
+    return f"git@{host}:{user}/{project}.git"
+
+
+def _github_https_url(host: str, user: str, project: str) -> str:
+    return f"https://{host}/{user}/{project}.git"
+
+
+def _format_clone_failure(
+    label: str,
+    url: str,
+    exc: subprocess.CalledProcessError,
+) -> str:
+    output = "\n".join(part for part in (exc.stderr, exc.stdout) if part).strip()
+    message = f"{label} clone from {url} failed (exit code {exc.returncode})"
+    if output:
+        message += f": {output}"
+    return message
 
 
 def _projects_base() -> Path:
@@ -433,7 +472,7 @@ def _list_github_repo_candidates(namespace: str) -> VcsRepoCandidates:
     from sase_github.config import get_default_github_host
 
     host = get_default_github_host()
-    env = os.environ.copy()
+    env = _non_interactive_gh_env()
     env["GH_HOST"] = host
     command = [
         "gh",
@@ -453,6 +492,7 @@ def _list_github_repo_candidates(namespace: str) -> VcsRepoCandidates:
             check=False,
             timeout=_GH_REPO_LIST_TIMEOUT_SECONDS,
             env=env,
+            stdin=subprocess.DEVNULL,
         )
     except FileNotFoundError:
         return _repo_candidates_error("tool_missing", "install the gh CLI")
@@ -722,6 +762,8 @@ def _ensure_useful_repo_name(
 
 def _resolved_ref_for_record(
     record: ProjectRecordWire,
+    *,
+    read_only: bool = False,
 ) -> ResolvedRef:
     workspace_dir = record.workspace_dir or parse_workspace_dir(record.project_file)
     if not workspace_dir:
@@ -729,12 +771,40 @@ def _resolved_ref_for_record(
             f"Project '{record.project_name}' is resolved by alias but "
             "WORKSPACE_DIR is not set"
         )
+    checkout_target = "origin/main" if read_only else get_default_branch(workspace_dir)
     return ResolvedRef(
         project_file=record.project_file,
         project_name=record.project_name,
         primary_workspace_dir=workspace_dir,
-        checkout_target=get_default_branch(workspace_dir),
+        checkout_target=checkout_target,
         canonical_ref=record.project_name,
+    )
+
+
+def _peek_repo_path_ref(user: str, project: str) -> ResolvedRef | None:
+    from sase_github.config import get_default_github_host
+
+    projects_base = _projects_base()
+    github_host = get_default_github_host()
+    primary_workspace_dir = _github_workspace_dir(user, project, host=github_host)
+    if not os.path.isdir(primary_workspace_dir.rstrip("/")):
+        return None
+
+    records = _list_project_records(projects_base)
+    existing_record = _find_project_record_for_workspace(
+        records,
+        primary_workspace_dir,
+    )
+    if existing_record is not None:
+        return _resolved_ref_for_record(existing_record, read_only=True)
+
+    project_name = _allocate_canonical_project_name(user, project, records)
+    return ResolvedRef(
+        project_file=_project_file_for(projects_base, project_name),
+        project_name=project_name,
+        primary_workspace_dir=primary_workspace_dir,
+        checkout_target="origin/main",
+        canonical_ref=project_name,
     )
 
 
@@ -778,6 +848,69 @@ def _resolve_repo_path_ref(user: str, project: str) -> ResolvedRef:
     )
 
 
+def _resolve_existing_named_ref(
+    gh_ref: str,
+    *,
+    read_only: bool,
+    strict: bool,
+) -> ResolvedRef | None:
+    from sase.ace.changespec import find_all_changespecs
+
+    projects_base = _projects_base()
+    alias_record = _find_project_record_for_alias(
+        _list_project_records(projects_base),
+        gh_ref,
+    )
+    if alias_record is not None:
+        return _resolved_ref_for_record(alias_record, read_only=read_only)
+
+    project_dir = projects_base / gh_ref
+    project_file_path = Path(preferred_project_spec_path(str(project_dir), gh_ref))
+    if project_dir.is_dir() and project_file_path.exists():
+        workspace_dir = parse_workspace_dir(str(project_file_path))
+        if workspace_dir:
+            checkout_target = (
+                "origin/main" if read_only else get_default_branch(workspace_dir)
+            )
+            return ResolvedRef(
+                project_file=str(project_file_path),
+                project_name=gh_ref,
+                primary_workspace_dir=workspace_dir,
+                checkout_target=checkout_target,
+            )
+
+    for cs in find_all_changespecs():
+        if cs.name != gh_ref:
+            continue
+        workspace_dir = parse_workspace_dir(cs.file_path)
+        if not workspace_dir:
+            if strict:
+                raise ValueError(
+                    f"ChangeSpec '{gh_ref}' found in {cs.file_path} "
+                    "but WORKSPACE_DIR is not set"
+                )
+            return None
+        return ResolvedRef(
+            project_file=cs.file_path,
+            project_name=cs.project_basename,
+            primary_workspace_dir=workspace_dir,
+            checkout_target=f"origin/{gh_ref}",
+        )
+
+    return None
+
+
+def peek_gh_ref(gh_ref: str) -> ResolvedRef | None:
+    """Read-only variant of ``resolve_gh_ref``."""
+    if "/" in gh_ref:
+        parts = gh_ref.strip("/").split("/")
+        if len(parts) != 2:
+            return None
+        return _peek_repo_path_ref(*parts)
+
+    return _resolve_existing_named_ref(gh_ref, read_only=True, strict=False)
+
+
 def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
     """Resolve a ``#gh`` reference to workspace and branch information.
 
@@ -794,10 +927,6 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
     Raises:
         ValueError: If the reference cannot be resolved.
     """
-    from sase.ace.changespec import find_all_changespecs
-
-    projects_base = _projects_base()
-
     # --- Mode 1: repo path (user/project) ---
     if "/" in gh_ref:
         parts = gh_ref.strip("/").split("/")
@@ -805,42 +934,9 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
             raise ValueError(f"Invalid repo path '{gh_ref}': expected 'user/project'")
         return _resolve_repo_path_ref(*parts)
 
-    alias_record = _find_project_record_for_alias(
-        _list_project_records(projects_base),
-        gh_ref,
-    )
-    if alias_record is not None:
-        return _resolved_ref_for_record(alias_record)
-
-    # --- Mode 2: project shorthand ---
-    project_dir = projects_base / gh_ref
-    project_file_path = Path(preferred_project_spec_path(str(project_dir), gh_ref))
-    if project_dir.is_dir() and project_file_path.exists():
-        workspace_dir = parse_workspace_dir(str(project_file_path))
-        if workspace_dir:
-            checkout_target = get_default_branch(workspace_dir)
-            return ResolvedRef(
-                project_file=str(project_file_path),
-                project_name=gh_ref,
-                primary_workspace_dir=workspace_dir,
-                checkout_target=checkout_target,
-            )
-
-    # --- Mode 3: ChangeSpec name ---
-    for cs in find_all_changespecs():
-        if cs.name == gh_ref:
-            workspace_dir = parse_workspace_dir(cs.file_path)
-            if not workspace_dir:
-                raise ValueError(
-                    f"ChangeSpec '{gh_ref}' found in {cs.file_path} "
-                    "but WORKSPACE_DIR is not set"
-                )
-            return ResolvedRef(
-                project_file=cs.file_path,
-                project_name=cs.project_basename,
-                primary_workspace_dir=workspace_dir,
-                checkout_target=f"origin/{gh_ref}",
-            )
+    resolved = _resolve_existing_named_ref(gh_ref, read_only=False, strict=True)
+    if resolved is not None:
+        return resolved
 
     raise ValueError(f"Cannot resolve gh_ref '{gh_ref}'")
 
@@ -862,6 +958,8 @@ def _check_pr_state(pr_number: str, cwd: str) -> str | None:
             capture_output=True,
             text=True,
             check=False,
+            env=_non_interactive_gh_env(),
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode == 0:
             return result.stdout.strip() or None
@@ -879,6 +977,8 @@ def _check_existing_pr(cwd: str) -> bool:
             capture_output=True,
             text=True,
             check=False,
+            env=_non_interactive_gh_env(),
+            stdin=subprocess.DEVNULL,
         )
         return result.returncode == 0
     except Exception:
@@ -920,6 +1020,8 @@ def _submit_via_pr_merge(
             capture_output=True,
             text=True,
             check=False,
+            env=_non_interactive_gh_env(),
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode != 0:
             error_msg = result.stderr.strip() or result.stdout.strip()
@@ -941,6 +1043,12 @@ def _submit_via_pr_merge(
     from sase.workspace_provider.submission_utils import finalize_submission
 
     return finalize_submission(changespec.file_path, changespec.name, console)  # type: ignore[attr-defined, arg-type]
+
+
+def _non_interactive_gh_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
+    env = non_interactive_git_env(base)
+    env["GH_PROMPT_DISABLED"] = "1"
+    return env
 
 
 def _prepare_mail_git(

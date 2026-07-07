@@ -15,6 +15,7 @@ from sase_github.workspace_plugin import (
     _clone_gh_repo,
     _extract_pr_number,
     _github_workspace_dir,
+    peek_gh_ref,
     resolve_gh_ref,
 )
 
@@ -155,34 +156,10 @@ class TestHostAwareWorkspace:
                     + "/"
                 )
 
-    def test_clone_uses_enterprise_https_url(self) -> None:
+    def test_clone_uses_enterprise_ssh_url_first(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             target = str(Path(d) / "repo")
-            with (
-                patch("sase_github.config.get_github_orgs", return_value=[]),
-                patch("sase_github.workspace_plugin.subprocess.run") as mock_run,
-            ):
-                _clone_gh_repo(
-                    "alice",
-                    "repo",
-                    target,
-                    host="github.enterprise.test",
-                )
-
-        assert mock_run.call_args[0][0] == [
-            "git",
-            "clone",
-            "https://github.enterprise.test/alice/repo.git",
-            target,
-        ]
-
-    def test_clone_uses_enterprise_ssh_url_for_configured_org(self) -> None:
-        with tempfile.TemporaryDirectory() as d:
-            target = str(Path(d) / "repo")
-            with (
-                patch("sase_github.config.get_github_orgs", return_value=["alice"]),
-                patch("sase_github.workspace_plugin.subprocess.run") as mock_run,
-            ):
+            with patch("sase_github.workspace_plugin.subprocess.run") as mock_run:
                 _clone_gh_repo(
                     "alice",
                     "repo",
@@ -196,6 +173,89 @@ class TestHostAwareWorkspace:
             "git@github.enterprise.test:alice/repo.git",
             target,
         ]
+        assert mock_run.call_args.kwargs["stdin"] is subprocess.DEVNULL
+        assert mock_run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+
+    def test_clone_uses_ssh_url_form_when_host_has_port(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            target = str(Path(d) / "repo")
+            with patch("sase_github.workspace_plugin.subprocess.run") as mock_run:
+                _clone_gh_repo(
+                    "alice",
+                    "repo",
+                    target,
+                    host="github.enterprise.test:2222",
+                )
+
+        assert mock_run.call_args[0][0] == [
+            "git",
+            "clone",
+            "ssh://git@github.enterprise.test:2222/alice/repo.git",
+            target,
+        ]
+
+    def test_clone_falls_back_to_https_after_ssh_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            target = str(Path(d) / "repo")
+            ssh_failure = subprocess.CalledProcessError(
+                128,
+                ["git", "clone"],
+                stderr="ssh denied",
+            )
+            with patch(
+                "sase_github.workspace_plugin.subprocess.run",
+                side_effect=[ssh_failure, MagicMock(returncode=0)],
+            ) as mock_run:
+                _clone_gh_repo(
+                    "alice",
+                    "repo",
+                    target,
+                    host="github.enterprise.test",
+                )
+
+        assert mock_run.call_args_list[0][0][0] == [
+            "git",
+            "clone",
+            "git@github.enterprise.test:alice/repo.git",
+            target,
+        ]
+        assert mock_run.call_args_list[1][0][0] == [
+            "git",
+            "clone",
+            "https://github.enterprise.test/alice/repo.git",
+            target,
+        ]
+
+    def test_clone_both_fail_error_includes_both_attempts(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            target = str(Path(d) / "repo")
+            ssh_failure = subprocess.CalledProcessError(
+                128,
+                ["git", "clone"],
+                stderr="ssh denied",
+            )
+            https_failure = subprocess.CalledProcessError(
+                128,
+                ["git", "clone"],
+                stderr="https denied",
+            )
+            with patch(
+                "sase_github.workspace_plugin.subprocess.run",
+                side_effect=[ssh_failure, https_failure],
+            ):
+                with pytest.raises(RuntimeError) as exc_info:
+                    _clone_gh_repo(
+                        "alice",
+                        "repo",
+                        target,
+                        host="github.enterprise.test",
+                    )
+
+        message = str(exc_info.value)
+        assert "SSH clone" in message
+        assert "ssh denied" in message
+        assert "HTTPS clone" in message
+        assert "https denied" in message
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
@@ -214,7 +274,6 @@ class TestHostAwareWorkspace:
                     "sase_github.config.get_default_github_host",
                     return_value="github.enterprise.test",
                 ),
-                patch("sase_github.config.get_github_orgs", return_value=[]),
                 patch("sase_github.workspace_plugin.subprocess.run") as mock_run,
             ):
                 result = resolve_gh_ref("alice/repo")
@@ -234,7 +293,7 @@ class TestHostAwareWorkspace:
         assert mock_run.call_args[0][0] == [
             "git",
             "clone",
-            "https://github.enterprise.test/alice/repo.git",
+            "git@github.enterprise.test:alice/repo.git",
             expected.rstrip("/"),
         ]
 
@@ -309,6 +368,9 @@ class TestRepoCandidateCompletion:
             "--limit",
             "2",
         ]
+        assert mock_run.call_args.kwargs["stdin"] is subprocess.DEVNULL
+        assert mock_run.call_args.kwargs["env"]["GH_PROMPT_DISABLED"] == "1"
+        assert mock_run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
 
     def test_uses_default_github_host_for_gh_host_env(self) -> None:
         with (
@@ -326,6 +388,7 @@ class TestRepoCandidateCompletion:
         assert result is not None
         assert result.status == "ok"
         assert mock_run.call_args.kwargs["env"]["GH_HOST"] == "github.enterprise.test"
+        assert mock_run.call_args.kwargs["env"]["GH_PROMPT_DISABLED"] == "1"
 
     @pytest.mark.parametrize(
         ("side_effect", "return_value", "expected_kind", "expected_message"),
@@ -690,6 +753,72 @@ class TestResolveGhRef:
     def test_invalid_repo_path(self) -> None:
         with pytest.raises(ValueError, match="expected 'user/project'"):
             resolve_gh_ref("a/b/c")
+
+
+class TestPeekGhRef:
+    def test_repo_path_existing_workspace_resolves_without_subprocess(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            primary = _github_workspace(home, "alice", "myrepo")
+            path_patch, env_patch = _home_patches(home)
+            with (
+                path_patch,
+                env_patch,
+                patch(
+                    "sase_github.workspace_plugin.subprocess.run",
+                    side_effect=AssertionError("peek must not spawn subprocesses"),
+                ),
+            ):
+                result = GitHubWorkspacePlugin().ws_peek_ref("alice/myrepo", "gh")
+
+        assert result is not None
+        assert result.project_name == "gh_alice__myrepo"
+        assert result.primary_workspace_dir == primary
+        assert result.checkout_target == "origin/main"
+        assert result.canonical_ref == "gh_alice__myrepo"
+
+    def test_repo_path_missing_workspace_returns_none_without_subprocess(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            path_patch, env_patch = _home_patches(home)
+            with (
+                path_patch,
+                env_patch,
+                patch(
+                    "sase_github.workspace_plugin.subprocess.run",
+                    side_effect=AssertionError("peek must not spawn subprocesses"),
+                ),
+            ):
+                result = peek_gh_ref("alice/myrepo")
+
+        assert result is None
+
+    def test_project_shorthand_resolves_without_default_branch_subprocess(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            path_patch, env_patch = _home_patches(home)
+            with (
+                path_patch,
+                env_patch,
+                patch(
+                    "sase_github.workspace_plugin.subprocess.run",
+                    side_effect=AssertionError("peek must not spawn subprocesses"),
+                ),
+            ):
+                proj_dir = home / ".sase" / "projects" / "myproj"
+                proj_dir.mkdir(parents=True)
+                spec = proj_dir / "myproj.sase"
+                spec.write_text("WORKSPACE_DIR: /work/myproj/\nNAME: cl\n")
+
+                result = peek_gh_ref("myproj")
+
+        assert result is not None
+        assert result.project_name == "myproj"
+        assert result.primary_workspace_dir == "/work/myproj/"
+        assert result.checkout_target == "origin/main"
+
+    def test_does_not_claim_other_workflow_types(self) -> None:
+        assert GitHubWorkspacePlugin().ws_peek_ref("alice/myrepo", "git") is None
 
 
 class TestWsResolveRef:
