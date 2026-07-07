@@ -243,22 +243,22 @@ def test_plugin_get_change_url_no_pr(
 
 
 @patch(_MOCK_TARGET)
-def test_plugin_get_cl_number_with_pr(
+def test_plugin_get_pr_number_with_pr(
     mock_run: MagicMock, github_provider: VCSPluginManager
 ) -> None:
     mock_run.return_value = MagicMock(returncode=0, stdout="42\n", stderr="")
-    success, number = github_provider.get_cl_number("/workspace")
+    success, number = github_provider.get_pr_number("/workspace")
 
     assert success is True
     assert number == "42"
 
 
 @patch(_MOCK_TARGET)
-def test_plugin_get_cl_number_no_pr(
+def test_plugin_get_pr_number_no_pr(
     mock_run: MagicMock, github_provider: VCSPluginManager
 ) -> None:
     mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="no PR")
-    success, number = github_provider.get_cl_number("/workspace")
+    success, number = github_provider.get_pr_number("/workspace")
 
     assert success is True
     assert number is None
@@ -353,26 +353,26 @@ def test_direct_get_change_url_no_pr(mock_run: MagicMock) -> None:
 
 
 @patch(_MOCK_TARGET)
-def test_direct_get_cl_number_with_pr(mock_run: MagicMock) -> None:
-    """Test GitHubPlugin.vcs_get_cl_number when PR exists."""
+def test_direct_get_pr_number_with_pr(mock_run: MagicMock) -> None:
+    """Test GitHubPlugin.vcs_get_pr_number when PR exists."""
     mock_run.return_value = MagicMock(returncode=0, stdout="42\n", stderr="")
 
     plugin = GitHubPlugin()
-    success, number = plugin.vcs_get_cl_number("/workspace")
+    success, number = plugin.vcs_get_pr_number("/workspace")
 
     assert success is True
     assert number == "42"
 
 
 @patch(_MOCK_TARGET)
-def test_direct_get_cl_number_no_pr(mock_run: MagicMock) -> None:
-    """Test GitHubPlugin.vcs_get_cl_number when no PR exists."""
+def test_direct_get_pr_number_no_pr(mock_run: MagicMock) -> None:
+    """Test GitHubPlugin.vcs_get_pr_number when no PR exists."""
     mock_run.return_value = MagicMock(
         returncode=1, stdout="", stderr="no pull requests found"
     )
 
     plugin = GitHubPlugin()
-    success, number = plugin.vcs_get_cl_number("/workspace")
+    success, number = plugin.vcs_get_pr_number("/workspace")
 
     assert success is True
     assert number is None

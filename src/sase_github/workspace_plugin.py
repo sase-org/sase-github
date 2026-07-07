@@ -98,9 +98,9 @@ class GitHubWorkspacePlugin:
         )
 
     @hookimpl
-    def ws_extract_change_identifier(self, cl_url: str) -> tuple[str, str] | None:
+    def ws_extract_change_identifier(self, pr_url: str) -> tuple[str, str] | None:
         """Extract PR number from a GitHub PR URL."""
-        match = _PR_URL_RE.match(cl_url)
+        match = _PR_URL_RE.match(pr_url)
         if match:
             return (match.group(1), "git")
         return None
@@ -124,9 +124,9 @@ class GitHubWorkspacePlugin:
         )
 
     @hookimpl
-    def ws_supports_reviewer_comments(self, cl_url: str) -> bool | None:
+    def ws_supports_reviewer_comments(self, pr_url: str) -> bool | None:
         """GitHub does not support reviewer comments via critique_comments."""
-        if _HOSTED_URL_RE.match(cl_url):
+        if _HOSTED_URL_RE.match(pr_url):
             return False
         return None
 
@@ -228,7 +228,7 @@ class GitHubWorkspacePlugin:
             changespec,
             changespec_file,
             changespec_name,
-            "Killed hook running on submitted CL.",
+            "Killed hook running on submitted PR.",
             log_fn=log_fn,
         )
 
@@ -297,7 +297,7 @@ class GitHubWorkspacePlugin:
 
             # Prefer the recorded PR URL/number when available — this is
             # resilient to branch renames (e.g. suffix strip/append).
-            pr_number = _extract_pr_number(changespec.cl)
+            pr_number = _extract_pr_number(changespec.pr_url)
             if pr_number:
                 pr_state = _check_pr_state(pr_number, ws_dir)
                 if pr_state == "OPEN":
@@ -307,13 +307,13 @@ class GitHubWorkspacePlugin:
                 elif pr_state == "CLOSED":
                     return (
                         False,
-                        f"PR #{pr_number} (from ChangeSpec CL field) is closed "
+                        f"PR #{pr_number} (from ChangeSpec PR field) is closed "
                         "and unmerged. Reopen it or create a new PR with #pr.",
                     )
                 elif pr_state == "MERGED":
                     return (
                         False,
-                        f"PR #{pr_number} (from ChangeSpec CL field) is already "
+                        f"PR #{pr_number} (from ChangeSpec PR field) is already "
                         "merged.",
                     )
                 # pr_state is None — fall through to branch-based check
@@ -638,11 +638,11 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
     raise ValueError(f"Cannot resolve gh_ref '{gh_ref}'")
 
 
-def _extract_pr_number(cl_url: str | None) -> str | None:
+def _extract_pr_number(pr_url: str | None) -> str | None:
     """Extract a PR number from a GitHub PR URL, or return ``None``."""
-    if not cl_url:
+    if not pr_url:
         return None
-    match = _PR_URL_RE.match(cl_url)
+    match = _PR_URL_RE.match(pr_url)
     return match.group(1) if match else None
 
 

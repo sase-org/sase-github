@@ -25,7 +25,7 @@ Extends `GitCommon` from sase core. Handles low-level VCS operations by wrapping
 | --------------------------- | ------------------------------------------------------------------------------------- |
 | `vcs_classify_repo()`       | Claims repos whose origin host is in the configured GitHub host set                   |
 | `vcs_get_change_url()`      | Returns PR URL via `gh pr view --json url`                                            |
-| `vcs_get_cl_number()`       | Returns PR number via `gh pr view --json number`                                      |
+| `vcs_get_pr_number()`       | Returns PR number via `gh pr view --json number`                                      |
 | `vcs_mail()`                | Pushes branch (`git push -u origin`) and creates PR if needed (`gh pr create --fill`) |
 | `vcs_create_pull_request()` | Creates a PR with an AI-generated title and body                                      |
 

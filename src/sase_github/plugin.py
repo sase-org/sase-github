@@ -2,7 +2,7 @@
 
 Handles git repositories hosted on GitHub (or similar hosted services).
 Inherits shared git operations from :class:`GitCommon` and adds
-GitHub-specific methods (``mail`` with PR creation, ``get_cl_number``
+GitHub-specific methods (``mail`` with PR creation, ``get_pr_number``
 and ``get_change_url`` via ``gh`` CLI).
 """
 
@@ -76,12 +76,16 @@ class GitHubPlugin(GitCommon):
         return (False, out.stderr.strip())
 
     @hookimpl
-    def vcs_get_cl_number(self, cwd: str) -> tuple[bool, str | None]:
+    def vcs_get_pr_number(self, cwd: str) -> tuple[bool, str | None]:
         out = self._run(["gh", "pr", "view", "--json", "number", "-q", ".number"], cwd)
         if out.success:
             number = out.stdout.strip()
             return (True, number) if number else (True, None)
         return (True, None)
+
+    @hookimpl
+    def vcs_get_cl_number(self, cwd: str) -> tuple[bool, str | None]:
+        return self.vcs_get_pr_number(cwd)
 
     @hookimpl
     def vcs_mail(self, revision: str, cwd: str) -> tuple[bool, str | None]:
