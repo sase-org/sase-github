@@ -60,6 +60,9 @@ Requires `sase>=0.1.3` as a dependency. For GitHub Enterprise Server or self-hos
 - **GitHubWorkspacePlugin** — Workspace provider that handles GitHub-specific workflow orchestration: reference
   resolution (repo paths, project names, changespec names), PR submission via `gh pr merge`, branch management, and
   commit description formatting
+- **Repo completion for `#gh:<owner>/` refs** — Supplies repository candidates to SASE prompt completion by calling
+  `gh repo list <owner>`. Authenticated `gh` sessions include private repositories the user can access, and configured
+  GitHub Enterprise hosts are respected through `GH_HOST`.
 
 ### Configuration
 
@@ -93,7 +96,8 @@ workflows, and PR submission.
 
 - Python 3.12+
 - [sase](https://github.com/sase-org/sase) >= 0.1.3
-- [gh](https://cli.github.com/) CLI (for GitHub API operations). For GitHub Enterprise, run
+- [gh](https://cli.github.com/) CLI (for GitHub API operations and `#gh:<owner>/` repository completion). Run
+  `gh auth login` so private repositories and higher API limits are available. For GitHub Enterprise, run
   `gh auth login --hostname <host>` for each configured Enterprise host.
 
 See [Configuration](docs/configuration.md) for `github_hosts`, `github_orgs`, workspace layout, and the ordered GitHub

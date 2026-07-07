@@ -33,6 +33,10 @@ Use this checklist for GitHub Enterprise Server or another self-hosted GitHub ho
    Then resolve a repo with `#gh(owner/repo)`. Enterprise workspaces are namespaced by host under
    `~/projects/github/<host>/<user>/<project>/`; see [Workspace Layout](#workspace-layout).
 
+   Prompt completion for `#gh:<owner>/` uses the same default host through `GH_HOST`, so Enterprise repository lists
+   come from the first configured `github_hosts` entry. Authenticate the GitHub CLI to that host before relying on
+   completion for private repositories.
+
 ## `github_hosts`
 
 The `github_hosts` setting controls which GitHub hosts sase-github recognizes. Add it to your sase config file
@@ -82,8 +86,9 @@ Currently the default config defines:
 ## Requirements
 
 - **`gh` CLI** — Required for all PR operations. Install from https://cli.github.com/ and authenticate with
-  `gh auth login`. For GitHub Enterprise, authenticate to the configured host with
-  `gh auth login --hostname github.mycompany.com`.
+  `gh auth login`. It is also used for `#gh:<owner>/` repository completion via `gh repo list <owner>`, including
+  private repositories visible to the authenticated account. For GitHub Enterprise, authenticate to the configured host
+  with `gh auth login --hostname github.mycompany.com`.
 - **Git** — Standard git CLI for repository operations.
 
 ## Workspace Layout

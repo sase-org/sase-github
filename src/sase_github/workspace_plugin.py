@@ -7,15 +7,22 @@ PR-based submission.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 
 from sase.ace.changespec.project_spec_path import preferred_project_spec_path
-from sase.workspace_provider import ResolvedRef, WorkflowMetadata, hookimpl
+from sase.workspace_provider import (
+    ResolvedRef,
+    VcsRepoCandidates,
+    VcsRepoEntry,
+    WorkflowMetadata,
+    hookimpl,
+)
 from sase.workspace_provider.utils import (
     get_default_branch,
     parse_workspace_dir,
@@ -27,6 +34,16 @@ if TYPE_CHECKING:
 
 _PR_URL_RE = re.compile(r"https?://[^/]+/.+?/pull/(\d+)")
 _HOSTED_URL_RE = re.compile(r"https?://[^/]+/")
+_GH_REPO_LIST_TIMEOUT_SECONDS = 10
+_DEFAULT_REPO_COMPLETION_LIMIT = 200
+_VcsRepoErrorKind = Literal[
+    "auth",
+    "network",
+    "not_found",
+    "tool_missing",
+    "unsupported_namespace",
+    "unknown",
+]
 
 
 class GitHubWorkspacePlugin:
@@ -96,6 +113,21 @@ class GitHubWorkspacePlugin:
             checkout_target=r.checkout_target,
             canonical_ref=r.canonical_ref,
         )
+
+    @hookimpl
+    def ws_list_repo_candidates(
+        self, workflow_type: str, namespace: str
+    ) -> VcsRepoCandidates | None:
+        """List GitHub repositories for prompt completion."""
+        if workflow_type != "gh":
+            return None
+        owner = namespace.strip()
+        if not owner or "/" in owner:
+            return _repo_candidates_error(
+                "unsupported_namespace",
+                "GitHub repo completion supports a single owner or organization.",
+            )
+        return _list_github_repo_candidates(owner)
 
     @hookimpl
     def ws_extract_change_identifier(self, pr_url: str) -> tuple[str, str] | None:
@@ -378,6 +410,181 @@ def _clone_gh_repo(
 
 def _projects_base() -> Path:
     return Path.home() / ".sase" / "projects"
+
+
+def _repo_completion_limit() -> int:
+    try:
+        from sase.config import load_merged_config
+
+        config = load_merged_config()
+    except Exception:
+        return _DEFAULT_REPO_COMPLETION_LIMIT
+
+    section = config.get("vcs_repo_completion", {}) if isinstance(config, dict) else {}
+    if not isinstance(section, dict):
+        return _DEFAULT_REPO_COMPLETION_LIMIT
+    value = section.get("max_repos")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return _DEFAULT_REPO_COMPLETION_LIMIT
+    return max(value, 1)
+
+
+def _list_github_repo_candidates(namespace: str) -> VcsRepoCandidates:
+    from sase_github.config import get_default_github_host
+
+    host = get_default_github_host()
+    env = os.environ.copy()
+    env["GH_HOST"] = host
+    command = [
+        "gh",
+        "repo",
+        "list",
+        namespace,
+        "--json",
+        "name,description,visibility,isArchived,isFork,pushedAt",
+        "--limit",
+        str(_repo_completion_limit()),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GH_REPO_LIST_TIMEOUT_SECONDS,
+            env=env,
+        )
+    except FileNotFoundError:
+        return _repo_candidates_error("tool_missing", "install the gh CLI")
+    except subprocess.TimeoutExpired:
+        return _repo_candidates_error("network", "repo listing failed - network error")
+    except OSError:
+        return _repo_candidates_error("tool_missing", "install the gh CLI")
+
+    if result.returncode != 0:
+        return _classify_gh_repo_list_error(result)
+
+    try:
+        entries = _repo_entries_from_gh_json(result.stdout, namespace)
+    except ValueError:
+        return _repo_candidates_error(
+            "unknown",
+            "repo listing failed - unexpected gh output",
+        )
+    return VcsRepoCandidates(
+        status="ok",
+        provider_display="GitHub",
+        entries=entries,
+    )
+
+
+def _repo_entries_from_gh_json(raw: str, namespace: str) -> tuple[VcsRepoEntry, ...]:
+    try:
+        data = json.loads(raw or "[]")
+    except json.JSONDecodeError as e:
+        raise ValueError("invalid gh JSON") from e
+    if not isinstance(data, list):
+        raise ValueError("expected gh JSON list")
+
+    entries: list[VcsRepoEntry] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = _string_field(item, "name")
+        if not name:
+            continue
+        entries.append(
+            VcsRepoEntry(
+                name=name,
+                ref=f"{namespace}/{name}",
+                description=_string_field(item, "description"),
+                visibility=_string_field(item, "visibility").lower(),
+                is_fork=bool(item.get("isFork")),
+                is_archived=bool(item.get("isArchived")),
+                pushed_at=_optional_string_field(item, "pushedAt"),
+            )
+        )
+    return tuple(entries)
+
+
+def _string_field(data: dict[str, Any], key: str) -> str:
+    value = data.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def _optional_string_field(data: dict[str, Any], key: str) -> str | None:
+    value = data.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _classify_gh_repo_list_error(
+    result: subprocess.CompletedProcess[str],
+) -> VcsRepoCandidates:
+    output = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
+    normalized = output.casefold()
+    if _looks_like_auth_error(normalized):
+        return _repo_candidates_error("auth", "run 'gh auth login'")
+    if _looks_like_not_found_error(normalized):
+        return _repo_candidates_error("not_found", "GitHub owner was not found")
+    if _looks_like_network_error(normalized):
+        return _repo_candidates_error("network", "repo listing failed - network error")
+    message = output.splitlines()[0] if output else "repo listing failed"
+    return _repo_candidates_error("unknown", message)
+
+
+def _looks_like_auth_error(text: str) -> bool:
+    markers = (
+        "auth login",
+        "authentication required",
+        "not logged in",
+        "requires authentication",
+        "bad credentials",
+        "http 401",
+        "http 403",
+        "status code 401",
+        "status code 403",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _looks_like_not_found_error(text: str) -> bool:
+    markers = (
+        "could not resolve to a user",
+        "could not resolve to an organization",
+        "not found",
+        "http 404",
+        "status code 404",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _looks_like_network_error(text: str) -> bool:
+    markers = (
+        "could not resolve host",
+        "failed to connect",
+        "connection refused",
+        "connection reset",
+        "i/o timeout",
+        "network",
+        "no such host",
+        "temporary failure",
+        "tls handshake timeout",
+        "timeout",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _repo_candidates_error(
+    error_kind: _VcsRepoErrorKind,
+    message: str,
+) -> VcsRepoCandidates:
+    return VcsRepoCandidates(
+        status="error",
+        error_kind=error_kind,
+        message=message,
+        provider_display="GitHub",
+        entries=(),
+    )
 
 
 def _github_workspace_dir(user: str, project: str, host: str | None = None) -> str:

@@ -1,5 +1,6 @@
 """Tests for sase_github.workspace_plugin module (GitHub-specific functions)."""
 
+import json
 import os
 import subprocess
 import tempfile
@@ -65,6 +66,20 @@ def _run_submitted_check_script(
         text=True,
         check=False,
         env=env,
+    )
+
+
+def _completed_gh_repo_list(
+    *,
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        args=["gh", "repo", "list"],
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
     )
 
 
@@ -222,6 +237,167 @@ class TestHostAwareWorkspace:
             "https://github.enterprise.test/alice/repo.git",
             expected.rstrip("/"),
         ]
+
+
+class TestRepoCandidateCompletion:
+    def test_does_not_claim_other_workflow_types(self) -> None:
+        assert GitHubWorkspacePlugin().ws_list_repo_candidates("git", "alice") is None
+
+    def test_nested_namespace_is_unsupported(self) -> None:
+        result = GitHubWorkspacePlugin().ws_list_repo_candidates("gh", "group/sub")
+
+        assert result is not None
+        assert result.status == "error"
+        assert result.error_kind == "unsupported_namespace"
+        assert result.provider_display == "GitHub"
+        assert result.entries == ()
+
+    def test_maps_gh_repo_list_fields(self) -> None:
+        payload = [
+            {
+                "name": "sase",
+                "description": "Structured agents",
+                "visibility": "PRIVATE",
+                "isArchived": False,
+                "isFork": True,
+                "pushedAt": "2026-07-07T17:00:00Z",
+            },
+            {
+                "name": "empty",
+                "description": None,
+                "visibility": "PUBLIC",
+                "isArchived": True,
+                "isFork": False,
+                "pushedAt": None,
+            },
+        ]
+
+        with (
+            patch(
+                "sase_github.workspace_plugin._repo_completion_limit",
+                return_value=2,
+            ),
+            patch(
+                "sase_github.workspace_plugin.subprocess.run",
+                return_value=_completed_gh_repo_list(stdout=json.dumps(payload)),
+            ) as mock_run,
+        ):
+            result = GitHubWorkspacePlugin().ws_list_repo_candidates("gh", "alice")
+
+        assert result is not None
+        assert result.status == "ok"
+        assert result.provider_display == "GitHub"
+        assert len(result.entries) == 2
+        assert result.entries[0].name == "sase"
+        assert result.entries[0].ref == "alice/sase"
+        assert result.entries[0].description == "Structured agents"
+        assert result.entries[0].visibility == "private"
+        assert result.entries[0].is_fork is True
+        assert result.entries[0].is_archived is False
+        assert result.entries[0].pushed_at == "2026-07-07T17:00:00Z"
+        assert result.entries[1].description == ""
+        assert result.entries[1].visibility == "public"
+        assert result.entries[1].is_archived is True
+        assert result.entries[1].pushed_at is None
+        assert mock_run.call_args[0][0] == [
+            "gh",
+            "repo",
+            "list",
+            "alice",
+            "--json",
+            "name,description,visibility,isArchived,isFork,pushedAt",
+            "--limit",
+            "2",
+        ]
+
+    def test_uses_default_github_host_for_gh_host_env(self) -> None:
+        with (
+            patch(
+                "sase_github.config.get_default_github_host",
+                return_value="github.enterprise.test",
+            ),
+            patch(
+                "sase_github.workspace_plugin.subprocess.run",
+                return_value=_completed_gh_repo_list(stdout="[]"),
+            ) as mock_run,
+        ):
+            result = GitHubWorkspacePlugin().ws_list_repo_candidates("gh", "alice")
+
+        assert result is not None
+        assert result.status == "ok"
+        assert mock_run.call_args.kwargs["env"]["GH_HOST"] == "github.enterprise.test"
+
+    @pytest.mark.parametrize(
+        ("side_effect", "return_value", "expected_kind", "expected_message"),
+        [
+            (FileNotFoundError(), None, "tool_missing", "install the gh CLI"),
+            (
+                subprocess.TimeoutExpired(["gh"], timeout=10),
+                None,
+                "network",
+                "network error",
+            ),
+            (
+                None,
+                _completed_gh_repo_list(
+                    returncode=1,
+                    stderr="To get started with GitHub CLI, run: gh auth login",
+                ),
+                "auth",
+                "gh auth login",
+            ),
+            (
+                None,
+                _completed_gh_repo_list(
+                    returncode=1,
+                    stderr="Could not resolve to a User with the login of 'alice'",
+                ),
+                "not_found",
+                "not found",
+            ),
+            (
+                None,
+                _completed_gh_repo_list(
+                    returncode=1,
+                    stderr="dial tcp: lookup api.github.com: no such host",
+                ),
+                "network",
+                "network error",
+            ),
+            (
+                None,
+                _completed_gh_repo_list(returncode=1, stderr="GraphQL failed"),
+                "unknown",
+                "GraphQL failed",
+            ),
+            (
+                None,
+                _completed_gh_repo_list(returncode=0, stdout="{"),
+                "unknown",
+                "unexpected gh output",
+            ),
+        ],
+    )
+    def test_error_mapping(
+        self,
+        side_effect: BaseException | None,
+        return_value: subprocess.CompletedProcess[str] | None,
+        expected_kind: str,
+        expected_message: str,
+    ) -> None:
+        with patch(
+            "sase_github.workspace_plugin.subprocess.run",
+            side_effect=side_effect,
+            return_value=return_value,
+        ):
+            result = GitHubWorkspacePlugin().ws_list_repo_candidates("gh", "alice")
+
+        assert result is not None
+        assert result.status == "error"
+        assert result.error_kind == expected_kind
+        assert expected_message in result.message
+        assert result.provider_display == "GitHub"
+        assert result.entries == ()
 
 
 class TestResolveGhRef:
