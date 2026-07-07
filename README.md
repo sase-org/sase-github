@@ -45,7 +45,7 @@ sase plugin install github
 `pip install sase-github` is only an escape hatch for non-managed or library-style environments. It is not the normal
 path for a `uv tool`-managed SASE command.
 
-Requires `sase>=0.1.3` as a dependency. For GitHub Enterprise Server or self-hosted GitHub, follow the
+Requires `sase>=0.11.0` as a dependency. For GitHub Enterprise Server or self-hosted GitHub, follow the
 [GitHub Enterprise setup walkthrough](docs/configuration.md#github-enterprise-setup).
 
 ## What's Included
@@ -63,13 +63,16 @@ Requires `sase>=0.1.3` as a dependency. For GitHub Enterprise Server or self-hos
 - **Repo completion for `#gh:<owner>/` refs** — Supplies repository candidates to SASE prompt completion by calling
   `gh repo list <owner>`. Authenticated `gh` sessions include private repositories the user can access, and configured
   GitHub Enterprise hosts are respected through `GH_HOST`.
+- **Owner completion for `#gh:` refs** — Supplies local namespace candidates from active canonical GitHub project
+  records (`gh_<owner>__<repo>`) plus configured `github_orgs`, so accepting an owner can chain into repo completion
+  without a network call.
 
 ### Configuration
 
 - **`get_github_hosts()` / `get_default_github_host()`** — Read `github_hosts` from sase config to recognize GitHub
   Enterprise hosts and choose the default host for `#gh(owner/repo)` clone refs
 - **`get_github_orgs()`** — Reads `github_orgs` from sase config to determine SSH vs HTTPS clone URLs for
-  organizations/users with push access
+  organizations/users with push access, and to seed local `#gh:` owner completion
 
 ### XPrompts
 
@@ -95,7 +98,7 @@ workflows, and PR submission.
 ## Requirements
 
 - Python 3.12+
-- [sase](https://github.com/sase-org/sase) >= 0.1.3
+- [sase](https://github.com/sase-org/sase) >= 0.11.0
 - [gh](https://cli.github.com/) CLI (for GitHub API operations and `#gh:<owner>/` repository completion). Run
   `gh auth login` so private repositories and higher API limits are available. For GitHub Enterprise, run
   `gh auth login --hostname <host>` for each configured Enterprise host.

@@ -74,6 +74,10 @@ github_orgs:
 This matters because SSH URLs require an SSH key configured with GitHub, while HTTPS URLs work for public repos without
 authentication (but require a token for push access).
 
+The same list also seeds local owner completion for `#gh:` prompts. SASE combines `github_orgs` with owners discovered
+from active canonical GitHub project records named `gh_<owner>__<repo>`. This completion source is local-only; it does
+not run `gh` or contact GitHub until you accept an owner and ask for repository completion with `#gh:<owner>/`.
+
 ## Default Config
 
 sase-github contributes a `default_config.yml` via the `sase_config` entry point. This is merged into the sase config

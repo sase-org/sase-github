@@ -41,6 +41,7 @@ Handles higher-level workflow orchestration. Implements workspace hooks for GitH
 | `ws_detect_workflow_type()`            | Returns `"gh"` for repos with a remote origin URL (non-local)                     |
 | `ws_get_change_label()`                | Returns `"PR"` for GitHub projects                                                |
 | `ws_resolve_ref()`                     | Resolves `#gh` references (see [Reference Resolution](#reference-resolution))     |
+| `ws_list_ref_namespaces()`             | Lists local `#gh:` owner candidates from active canonical projects and config     |
 | `ws_extract_change_identifier()`       | Extracts PR number from GitHub PR URLs                                            |
 | `ws_generate_submitted_check_script()` | Generates a bash script that checks if a PR is merged via `gh pr view`            |
 | `ws_supports_reviewer_comments()`      | Returns `False` for GitHub URLs (critique comments not supported)                 |
@@ -90,6 +91,17 @@ When the ref matches an existing ChangeSpec:
 - Searches all changespecs for a matching name
 - Reads `WORKSPACE_DIR` from the changespec's project file
 - Checks out `origin/<name>` (the ChangeSpec's branch)
+
+## Ref Namespace Completion
+
+For root ref completion after `#gh:`, `GitHubWorkspacePlugin` implements `ws_list_ref_namespaces()`. It returns
+GitHub owner/org candidates from two local sources only:
+
+- Active SASE project records whose directory keys use the canonical GitHub shape `gh_<owner>__<repo>`
+- The configured `github_orgs` list
+
+Record-derived owners show their active project count. Config-only owners show `from github_orgs`. Duplicate owners are
+deduplicated case-insensitively, with record-derived spellings preferred when both sources include the same owner.
 
 ## Submission Flow
 

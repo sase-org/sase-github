@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,6 +16,7 @@ from sase_github.workspace_plugin import (
     _clone_gh_repo,
     _extract_pr_number,
     _github_workspace_dir,
+    _list_active_project_records,
     peek_gh_ref,
     resolve_gh_ref,
 )
@@ -461,6 +463,98 @@ class TestRepoCandidateCompletion:
         assert expected_message in result.message
         assert result.provider_display == "GitHub"
         assert result.entries == ()
+
+
+class TestRefNamespaceCompletion:
+    def test_does_not_claim_other_workflow_types(self) -> None:
+        assert GitHubWorkspacePlugin().ws_list_ref_namespaces("git") is None
+
+    def test_lists_owners_from_active_canonical_project_records(self) -> None:
+        records = [
+            SimpleNamespace(project_name="gh_sase-org__sase"),
+            SimpleNamespace(project_name="gh_bbugyi200__dotfiles"),
+            SimpleNamespace(project_name="gh_sase-org__sase-core"),
+            SimpleNamespace(project_name="sase"),
+            SimpleNamespace(project_name="gh_missing_separator"),
+            SimpleNamespace(project_name="gh___repo"),
+            SimpleNamespace(project_name="gh_owner__"),
+        ]
+
+        with (
+            patch(
+                "sase_github.workspace_plugin._list_active_project_records",
+                return_value=records,
+            ),
+            patch("sase_github.config.get_github_orgs", return_value=[]),
+        ):
+            result = GitHubWorkspacePlugin().ws_list_ref_namespaces("gh")
+
+        assert result is not None
+        assert [
+            (entry.name, entry.description, entry.kind_label)
+            for entry in result.entries
+        ] == [
+            ("bbugyi200", "1 active project", "org"),
+            ("sase-org", "2 active projects", "org"),
+        ]
+
+    def test_unions_config_orgs_with_case_insensitive_dedupe(self) -> None:
+        records = [SimpleNamespace(project_name="gh_sase-org__sase")]
+
+        with (
+            patch(
+                "sase_github.workspace_plugin._list_active_project_records",
+                return_value=records,
+            ),
+            patch(
+                "sase_github.config.get_github_orgs",
+                return_value=["SASE-ORG", "bbugyi200", ""],
+            ),
+        ):
+            result = GitHubWorkspacePlugin().ws_list_ref_namespaces("gh")
+
+        assert result is not None
+        assert [(entry.name, entry.description) for entry in result.entries] == [
+            ("bbugyi200", "from github_orgs"),
+            ("sase-org", "1 active project"),
+        ]
+
+    def test_active_records_helper_filters_to_active_lifecycle(
+        self, tmp_path: Path
+    ) -> None:
+        projects_base = tmp_path / "projects"
+        projects_base.mkdir()
+
+        with patch(
+            "sase.core.project_lifecycle_facade.list_project_records",
+            return_value=[],
+        ) as list_records:
+            assert _list_active_project_records(projects_base) == []
+
+        list_records.assert_called_once_with(
+            projects_base,
+            ["active"],
+            include_home=False,
+        )
+
+    def test_ref_namespace_listing_does_not_spawn_subprocesses(self) -> None:
+        records = [SimpleNamespace(project_name="gh_sase-org__sase")]
+
+        with (
+            patch(
+                "sase_github.workspace_plugin._list_active_project_records",
+                return_value=records,
+            ),
+            patch("sase_github.config.get_github_orgs", return_value=["bbugyi200"]),
+            patch(
+                "sase_github.workspace_plugin.subprocess.run",
+                side_effect=AssertionError("namespace completion must stay local"),
+            ),
+        ):
+            result = GitHubWorkspacePlugin().ws_list_ref_namespaces("gh")
+
+        assert result is not None
+        assert [entry.name for entry in result.entries] == ["bbugyi200", "sase-org"]
 
 
 class TestResolveGhRef:

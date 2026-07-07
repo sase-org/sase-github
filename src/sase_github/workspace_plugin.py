@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from sase.ace.changespec.project_spec_path import preferred_project_spec_path
 from sase.workspace_provider import (
     ResolvedRef,
+    VcsNamespaceEntry,
+    VcsRefNamespaces,
     VcsRepoCandidates,
     VcsRepoEntry,
     WorkflowMetadata,
@@ -136,6 +138,13 @@ class GitHubWorkspacePlugin:
                 "GitHub repo completion supports a single owner or organization.",
             )
         return _list_github_repo_candidates(owner)
+
+    @hookimpl
+    def ws_list_ref_namespaces(self, workflow_type: str) -> VcsRefNamespaces | None:
+        """List locally-known GitHub owners for root ref completion."""
+        if workflow_type != "gh":
+            return None
+        return _list_github_ref_namespaces()
 
     @hookimpl
     def ws_extract_change_identifier(self, pr_url: str) -> tuple[str, str] | None:
@@ -655,6 +664,70 @@ def _list_project_records(projects_base: Path) -> list[ProjectRecordWire]:
         list(PROJECT_LIFECYCLE_STATES),
         include_home=False,
     )
+
+
+def _list_active_project_records(projects_base: Path) -> list[ProjectRecordWire]:
+    if not projects_base.is_dir():
+        return []
+
+    from sase.core.project_lifecycle_facade import list_project_records
+
+    return list_project_records(
+        projects_base,
+        ["active"],
+        include_home=False,
+    )
+
+
+def _canonical_project_owner(project_name: str) -> str | None:
+    if not project_name.startswith("gh_"):
+        return None
+    body = project_name[len("gh_") :]
+    owner, separator, repo = body.partition("__")
+    if not separator or not owner or not repo:
+        return None
+    return owner
+
+
+def _pluralize_project_count(count: int) -> str:
+    noun = "project" if count == 1 else "projects"
+    return f"{count} active {noun}"
+
+
+def _list_github_ref_namespaces() -> VcsRefNamespaces:
+    from sase_github.config import get_github_orgs
+
+    owner_counts: dict[str, int] = {}
+    owner_names: dict[str, str] = {}
+    for record in _list_active_project_records(_projects_base()):
+        owner = _canonical_project_owner(record.project_name)
+        if owner is None:
+            continue
+        key = owner.casefold()
+        owner_counts[key] = owner_counts.get(key, 0) + 1
+        owner_names.setdefault(key, owner)
+
+    descriptions: dict[str, str] = {
+        key: _pluralize_project_count(count) for key, count in owner_counts.items()
+    }
+
+    for org in get_github_orgs():
+        name = org.strip()
+        if not name:
+            continue
+        key = name.casefold()
+        owner_names.setdefault(key, name)
+        descriptions.setdefault(key, "from github_orgs")
+
+    entries = tuple(
+        VcsNamespaceEntry(
+            name=owner_names[key],
+            description=descriptions[key],
+            kind_label="org",
+        )
+        for key in sorted(owner_names, key=lambda item: owner_names[item].casefold())
+    )
+    return VcsRefNamespaces(entries=entries)
 
 
 def _find_project_record_for_workspace(
