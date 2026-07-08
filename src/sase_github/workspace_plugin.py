@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -34,10 +36,12 @@ from sase.workspace_provider.utils import (
 
 if TYPE_CHECKING:
     from sase.core.project_lifecycle_wire import ProjectRecordWire
+    from sase_github.config import GitHubRemote
 
 _PR_URL_RE = re.compile(r"https?://[^/]+/.+?/pull/(\d+)")
 _HOSTED_URL_RE = re.compile(r"https?://[^/]+/")
 _GH_REPO_LIST_TIMEOUT_SECONDS = 10
+_SDD_STORE_SCHEMA_VERSION = 1
 _DEFAULT_REPO_COMPLETION_LIMIT = 200
 _VcsRepoErrorKind = Literal[
     "auth",
@@ -63,6 +67,7 @@ class GitHubWorkspacePlugin:
             pre_allocated_env_prefix="SASE_GH",
             vcs_family="git",
             vcs_provider_name="github",
+            sdd_storage_policy="separate_repo",
         )
 
     @hookimpl
@@ -192,6 +197,69 @@ class GitHubWorkspacePlugin:
         from sase.workspace_provider.utils import ensure_workspace_checkout
 
         return ensure_workspace_checkout(primary_workspace_dir, workspace_num)
+
+    @hookimpl
+    def ws_materialize_sdd_store(
+        self,
+        primary_workspace_dir: str,
+        workspace_dir: str,
+        options: dict[str, object],
+    ) -> dict[str, object] | None:
+        """Discover and materialize the GitHub companion SDD repository."""
+        origin = _read_github_origin(primary_workspace_dir)
+        if origin is None:
+            return None
+
+        owner, repo = _companion_sdd_repo(origin.owner, origin.repo)
+        repo_full_name = f"{owner}/{repo}"
+        remote_url = _github_ssh_url(origin.host, owner, repo)
+        probe = _probe_github_repo(origin.host, repo_full_name)
+        if probe == "not_found":
+            return _sdd_store_record(
+                origin.host,
+                repo_full_name,
+                remote_url,
+                discovery="not_found",
+            )
+        if probe != "found":
+            return None
+
+        sdd_dir = Path(primary_workspace_dir).expanduser() / ".sase" / "sdd"
+        existing_remote = (
+            _read_git_origin(sdd_dir) if (sdd_dir / ".git").is_dir() else None
+        )
+        if existing_remote is not None:
+            if _remote_matches_repo(existing_remote, origin.host, owner, repo):
+                return _sdd_store_record(
+                    origin.host,
+                    repo_full_name,
+                    existing_remote,
+                    discovery="found",
+                )
+            _print_sdd_adoption_notice(sdd_dir, repo_full_name)
+            return _sdd_store_record(
+                origin.host,
+                repo_full_name,
+                remote_url,
+                discovery="not_found",
+            )
+
+        if _path_has_content(sdd_dir):
+            _print_sdd_adoption_notice(sdd_dir, repo_full_name)
+            return _sdd_store_record(
+                origin.host,
+                repo_full_name,
+                remote_url,
+                discovery="not_found",
+            )
+
+        cloned_remote_url = _clone_sdd_repo(owner, repo, sdd_dir, host=origin.host)
+        return _sdd_store_record(
+            origin.host,
+            repo_full_name,
+            cloned_remote_url,
+            discovery="found",
+        )
 
     @hookimpl
     def ws_prepare_mail(
@@ -389,13 +457,181 @@ class GitHubWorkspacePlugin:
 # ── Private helpers ─────────────────────────────────────────────────
 
 
+def _read_github_origin(workspace_dir: str) -> GitHubRemote | None:
+    from sase_github.config import get_github_hosts, parse_github_remote_url
+
+    origin = _read_git_origin(Path(workspace_dir).expanduser())
+    parsed = parse_github_remote_url(origin)
+    if parsed is None:
+        return None
+    if parsed.host not in get_github_hosts():
+        return None
+    return parsed
+
+
+def _read_git_origin(cwd: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+            env=non_interactive_git_env(),
+            stdin=subprocess.DEVNULL,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def _companion_sdd_repo(owner: str, repo: str) -> tuple[str, str]:
+    from sase_github.config import get_sdd_repo_name_override
+
+    override = get_sdd_repo_name_override()
+    if override is None:
+        return owner, f"{repo}-sdd"
+
+    parts = [part for part in override.strip("/").split("/") if part]
+    if len(parts) == 1:
+        return owner, parts[0]
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    raise ValueError("sdd.repo.name must be a repo name or owner/repo")
+
+
+_SddRepoProbe = Literal["found", "not_found", "unavailable"]
+
+
+def _probe_github_repo(host: str, repo_full_name: str) -> _SddRepoProbe:
+    env = _non_interactive_gh_env()
+    env["GH_HOST"] = host
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "repo",
+                "view",
+                repo_full_name,
+                "--json",
+                "name",
+                "-q",
+                ".name",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_sdd_network_timeout(),
+            env=env,
+            stdin=subprocess.DEVNULL,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return "unavailable"
+
+    if result.returncode == 0:
+        return "found"
+
+    output = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
+    normalized = output.casefold()
+    if _looks_like_not_found_error(normalized):
+        return "not_found"
+    return "unavailable"
+
+
+def _sdd_network_timeout() -> float:
+    try:
+        from sase.sdd._commit import network_git_timeout
+
+        return network_git_timeout()
+    except Exception:
+        return float(_GH_REPO_LIST_TIMEOUT_SECONDS)
+
+
+def _sdd_store_record(
+    host: str,
+    repo_full_name: str,
+    remote_url: str,
+    *,
+    discovery: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": _SDD_STORE_SCHEMA_VERSION,
+        "storage": "separate_repo",
+        "provider": "github",
+        "host": host,
+        "repo": repo_full_name,
+        "remote_url": remote_url,
+        "discovery": discovery,
+    }
+
+
+def _remote_matches_repo(
+    remote_url: str,
+    host: str,
+    owner: str,
+    repo: str,
+) -> bool:
+    from sase_github.config import parse_github_remote_url
+
+    parsed = parse_github_remote_url(remote_url)
+    if parsed is None:
+        return False
+    return (
+        parsed.host == host
+        and parsed.owner.casefold() == owner.casefold()
+        and parsed.repo.casefold() == repo.casefold()
+    )
+
+
+def _path_has_content(path: Path) -> bool:
+    try:
+        next(path.iterdir())
+    except FileNotFoundError:
+        return False
+    except NotADirectoryError:
+        return True
+    except StopIteration:
+        return False
+    return True
+
+
+def _print_sdd_adoption_notice(sdd_dir: Path, repo_full_name: str) -> None:
+    print(
+        "Existing SDD store at "
+        f"{sdd_dir} does not match GitHub companion repo {repo_full_name}; "
+        "leaving local SDD storage in place. Run `sase sdd migrate` to adopt it.",
+        file=sys.stderr,
+    )
+
+
+def _clone_sdd_repo(user: str, project: str, target_dir: Path, *, host: str) -> str:
+    parent = target_dir.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    temp_dir = parent / f".{target_dir.name}.clone-tmp-{os.getpid()}"
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    try:
+        remote_url = _clone_gh_repo(user, project, str(temp_dir), host=host)
+        if target_dir.exists():
+            target_dir.rmdir()
+        temp_dir.replace(target_dir)
+        return remote_url
+    except Exception:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+
+
 def _clone_gh_repo(
     user: str,
     project: str,
     target_dir: str,
     *,
     host: str | None = None,
-) -> None:
+) -> str:
     """Clone a GitHub repo to the target directory."""
     from sase_github.config import get_default_github_host
 
@@ -419,7 +655,7 @@ def _clone_gh_repo(
                 env=non_interactive_git_env(),
                 stdin=subprocess.DEVNULL,
             )
-            return
+            return url
         except subprocess.CalledProcessError as e:
             if first_error is None:
                 first_error = e

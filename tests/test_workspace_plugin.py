@@ -86,6 +86,21 @@ def _completed_gh_repo_list(
     )
 
 
+def _completed(
+    *,
+    args: list[str] | None = None,
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        args=args or ["cmd"],
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
 @pytest.fixture(autouse=True)
 def _default_github_host() -> object:
     with patch("sase_github.config.get_default_github_host", return_value="github.com"):
@@ -557,6 +572,224 @@ class TestRefNamespaceCompletion:
         assert [entry.name for entry in result.entries] == ["bbugyi200", "sase-org"]
 
 
+class TestSddMaterialization:
+    def test_metadata_declares_separate_repo_policy(self) -> None:
+        metadata = GitHubWorkspacePlugin().ws_get_workflow_metadata()
+
+        assert metadata is not None
+        assert metadata.sdd_storage_policy == "separate_repo"
+
+    def test_found_companion_repo_clones_and_returns_positive_record(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        primary = tmp_path / "widget"
+        checkout = tmp_path / "widget_2"
+        primary.mkdir()
+        checkout.mkdir()
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(
+                    stdout="https://github.enterprise.test/acme/widget.git\n"
+                )
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(stdout="widget-sdd\n")
+            if cmd[:2] == ["git", "clone"]:
+                Path(cmd[-1]).mkdir(parents=True)
+                return _completed()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with (
+            patch(
+                "sase_github.config.load_merged_config",
+                return_value={"github_hosts": ["github.enterprise.test"]},
+            ),
+            patch(
+                "sase_github.workspace_plugin._sdd_network_timeout",
+                return_value=7.0,
+            ),
+            patch(
+                "sase_github.workspace_plugin.subprocess.run", side_effect=run
+            ) as mock_run,
+        ):
+            record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
+                str(primary),
+                str(checkout),
+                {},
+            )
+
+        assert record == {
+            "schema_version": 1,
+            "storage": "separate_repo",
+            "provider": "github",
+            "host": "github.enterprise.test",
+            "repo": "acme/widget-sdd",
+            "remote_url": "git@github.enterprise.test:acme/widget-sdd.git",
+            "discovery": "found",
+        }
+        assert (primary / ".sase" / "sdd").is_dir()
+        gh_call = mock_run.call_args_list[1]
+        assert gh_call[0][0][:4] == ["gh", "repo", "view", "acme/widget-sdd"]
+        assert gh_call.kwargs["env"]["GH_HOST"] == "github.enterprise.test"
+        assert gh_call.kwargs["timeout"] == 7.0
+        clone_call = mock_run.call_args_list[2]
+        assert clone_call[0][0] == [
+            "git",
+            "clone",
+            "git@github.enterprise.test:acme/widget-sdd.git",
+            str(primary / ".sase" / f".sdd.clone-tmp-{os.getpid()}"),
+        ]
+
+    def test_not_found_probe_returns_negative_record(self, tmp_path: Path) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(returncode=1, stderr="repository not found")
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
+                str(primary),
+                str(primary),
+                {},
+            )
+
+        assert record is not None
+        assert record["discovery"] == "not_found"
+        assert record["repo"] == "acme/widget-sdd"
+        assert not (primary / ".sase" / "sdd").exists()
+
+    def test_transport_probe_failure_does_not_cache_negative_record(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(
+                    returncode=1, stderr="lookup api.github.com: no such host"
+                )
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
+                str(primary),
+                str(primary),
+                {},
+            )
+
+        assert record is None
+        assert not (primary / ".sase" / "sdd").exists()
+
+    def test_existing_local_sdd_content_is_not_clobbered(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        primary = tmp_path / "widget"
+        sdd_dir = primary / ".sase" / "sdd"
+        sdd_dir.mkdir(parents=True)
+        (sdd_dir / "README.md").write_text("local", encoding="utf-8")
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(stdout="widget-sdd\n")
+            if cmd[:2] == ["git", "clone"]:
+                raise AssertionError("local SDD content must not be clobbered")
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
+                str(primary),
+                str(primary),
+                {},
+            )
+
+        assert record is not None
+        assert record["discovery"] == "not_found"
+        assert (sdd_dir / "README.md").read_text(encoding="utf-8") == "local"
+        assert "sase sdd migrate" in capsys.readouterr().err
+
+    def test_existing_matching_sdd_remote_is_adopted(self, tmp_path: Path) -> None:
+        primary = tmp_path / "widget"
+        sdd_dir = primary / ".sase" / "sdd"
+        (sdd_dir / ".git").mkdir(parents=True)
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                cwd = Path(str(kwargs["cwd"]))
+                if cwd == primary:
+                    return _completed(stdout="https://github.com/acme/widget.git\n")
+                if cwd == sdd_dir:
+                    return _completed(stdout="git@github.com:acme/widget-sdd.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(stdout="widget-sdd\n")
+            if cmd[:2] == ["git", "clone"]:
+                raise AssertionError("matching SDD remote should be adopted")
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
+                str(primary),
+                str(primary),
+                {},
+            )
+
+        assert record is not None
+        assert record["discovery"] == "found"
+        assert record["remote_url"] == "git@github.com:acme/widget-sdd.git"
+
+    def test_sdd_repo_name_override_can_choose_owner_and_name(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(stdout="custom-sdd\n")
+            if cmd[:2] == ["git", "clone"]:
+                Path(cmd[-1]).mkdir(parents=True)
+                return _completed()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with (
+            patch(
+                "sase_github.config.load_merged_config",
+                return_value={"sdd": {"repo": {"name": "other/custom-sdd"}}},
+            ),
+            patch(
+                "sase_github.workspace_plugin.subprocess.run", side_effect=run
+            ) as mock_run,
+        ):
+            record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
+                str(primary),
+                str(primary),
+                {},
+            )
+
+        assert record is not None
+        assert record["repo"] == "other/custom-sdd"
+        assert mock_run.call_args_list[1][0][0][3] == "other/custom-sdd"
+        assert mock_run.call_args_list[2][0][0][2] == (
+            "git@github.com:other/custom-sdd.git"
+        )
+
+
 class TestResolveGhRef:
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
@@ -933,6 +1166,37 @@ class TestWsResolveRef:
         assert result is not None
         assert result.project_name == "gh_alice__myrepo"
         assert result.canonical_ref == "gh_alice__myrepo"
+
+
+class TestGhSetup:
+    def test_materializes_sdd_store_after_checkout(self) -> None:
+        from sase_github.scripts import gh_setup
+
+        resolved = ResolvedRef(
+            project_file="/tmp/gh_acme__widget.sase",
+            project_name="gh_acme__widget",
+            primary_workspace_dir="/work/widget/",
+            checkout_target="origin/main",
+            canonical_ref="gh_acme__widget",
+        )
+
+        with (
+            patch("sase_github.scripts.gh_setup.resolve_ref", return_value=resolved),
+            patch.dict(os.environ, {"SASE_GH_PRE_ALLOCATED": "0"}),
+            patch(
+                "sase_github.scripts.gh_setup.ensure_workspace_checkout",
+                return_value="/work/widget_7/",
+            ),
+            patch(
+                "sase_github.scripts.gh_setup.get_first_available_axe_workspace",
+                return_value=7,
+            ),
+            patch("sase_github.scripts.gh_setup.claim_workspace"),
+            patch("sase_github.scripts.gh_setup.materialize_sdd_store") as materialize,
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=False)
+
+        materialize.assert_called_once_with("/work/widget_7/", 7)
 
 
 # ── detect_workflow_type (via plugin) ────────────────────────────────

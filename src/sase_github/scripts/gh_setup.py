@@ -8,6 +8,7 @@ from sase.running_field import (
     claim_workspace,
     get_first_available_axe_workspace,
 )
+from sase.sdd.store import materialize_sdd_store
 
 
 def main(
@@ -41,6 +42,8 @@ def main(
         workspace_dir = ensure_workspace_checkout(
             resolved.primary_workspace_dir, workspace_num
         )
+
+    materialize_sdd_store(workspace_dir, workspace_num)
 
     # Use the parent process PID, not our own.  This setup step runs as a
     # short-lived subprocess (via ``subprocess.run``), so ``os.getpid()``
