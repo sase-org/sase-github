@@ -262,6 +262,46 @@ class GitHubWorkspacePlugin:
         )
 
     @hookimpl
+    def ws_create_sdd_remote(
+        self,
+        primary_workspace_dir: str,
+        workspace_dir: str,
+        options: dict[str, object],
+    ) -> dict[str, object] | None:
+        """Verify or create the GitHub companion SDD repository."""
+        origin = _read_github_origin(primary_workspace_dir)
+        if origin is None:
+            return None
+
+        owner, repo = _companion_sdd_repo(origin.owner, origin.repo)
+        repo_full_name = f"{owner}/{repo}"
+        remote_url = _github_ssh_url(origin.host, owner, repo)
+        probe = _probe_github_repo(origin.host, repo_full_name)
+        if probe == "found":
+            return _sdd_store_record(
+                origin.host,
+                repo_full_name,
+                remote_url,
+                discovery="found",
+            )
+        if probe == "not_found" and not bool(options.get("create")):
+            return _sdd_store_record(
+                origin.host,
+                repo_full_name,
+                remote_url,
+                discovery="not_found",
+            )
+        if probe == "not_found":
+            _create_github_sdd_repo(origin.host, repo_full_name)
+            return _sdd_store_record(
+                origin.host,
+                repo_full_name,
+                remote_url,
+                discovery="found",
+            )
+        return None
+
+    @hookimpl
     def ws_prepare_mail(
         self,
         changespec_name: str,
@@ -539,6 +579,35 @@ def _probe_github_repo(host: str, repo_full_name: str) -> _SddRepoProbe:
     if _looks_like_not_found_error(normalized):
         return "not_found"
     return "unavailable"
+
+
+def _create_github_sdd_repo(host: str, repo_full_name: str) -> None:
+    env = _non_interactive_gh_env()
+    env["GH_HOST"] = host
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "create", repo_full_name, "--private"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_sdd_network_timeout(),
+            env=env,
+            stdin=subprocess.DEVNULL,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("gh repo create failed: gh command not found") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("gh repo create timed out") from exc
+    except OSError as exc:
+        raise RuntimeError(f"gh repo create failed: {exc}") from exc
+
+    if result.returncode != 0:
+        detail = "\n".join(part for part in (result.stderr, result.stdout) if part)
+        detail = detail.strip()
+        message = f"gh repo create failed for {repo_full_name}"
+        if detail:
+            message += f": {detail}"
+        raise RuntimeError(message)
 
 
 def _sdd_network_timeout() -> float:
