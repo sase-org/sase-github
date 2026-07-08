@@ -210,10 +210,15 @@ class GitHubWorkspacePlugin:
         if origin is None:
             return None
 
-        owner, repo = _companion_sdd_repo(origin.owner, origin.repo)
+        candidate = _discover_companion_sdd_repo(
+            origin.host,
+            _companion_sdd_candidates(origin.owner, origin.repo),
+        )
+        if candidate is None:
+            return None
+        owner, repo, probe = candidate
         repo_full_name = f"{owner}/{repo}"
         remote_url = _github_ssh_url(origin.host, owner, repo)
-        probe = _probe_github_repo(origin.host, repo_full_name)
         if probe == "not_found":
             return _sdd_store_record(
                 origin.host,
@@ -273,10 +278,15 @@ class GitHubWorkspacePlugin:
         if origin is None:
             return None
 
-        owner, repo = _companion_sdd_repo(origin.owner, origin.repo)
+        candidate = _discover_companion_sdd_repo(
+            origin.host,
+            _companion_sdd_candidates(origin.owner, origin.repo),
+        )
+        if candidate is None:
+            return None
+        owner, repo, probe = candidate
         repo_full_name = f"{owner}/{repo}"
         remote_url = _github_ssh_url(origin.host, owner, repo)
-        probe = _probe_github_repo(origin.host, repo_full_name)
         if probe == "found":
             return _sdd_store_record(
                 origin.host,
@@ -528,22 +538,41 @@ def _read_git_origin(cwd: Path) -> str | None:
     return result.stdout.strip() or None
 
 
-def _companion_sdd_repo(owner: str, repo: str) -> tuple[str, str]:
+def _companion_sdd_candidates(owner: str, repo: str) -> list[tuple[str, str]]:
     from sase_github.config import get_sdd_repo_name_override
 
     override = get_sdd_repo_name_override()
     if override is None:
-        return owner, f"{repo}-sdd"
+        return [(owner, "sdd"), (owner, f"{repo}-sdd")]
 
     parts = [part for part in override.strip("/").split("/") if part]
     if len(parts) == 1:
-        return owner, parts[0]
+        return [(owner, parts[0])]
     if len(parts) == 2:
-        return parts[0], parts[1]
+        return [(parts[0], parts[1])]
     raise ValueError("sdd.repo.name must be a repo name or owner/repo")
 
 
+def _companion_sdd_repo(owner: str, repo: str) -> tuple[str, str]:
+    return _companion_sdd_candidates(owner, repo)[0]
+
+
 _SddRepoProbe = Literal["found", "not_found", "unavailable"]
+
+
+def _discover_companion_sdd_repo(
+    host: str,
+    candidates: Sequence[tuple[str, str]],
+) -> tuple[str, str, _SddRepoProbe] | None:
+    primary = candidates[0]
+    for owner, repo in candidates:
+        repo_full_name = f"{owner}/{repo}"
+        probe = _probe_github_repo(host, repo_full_name)
+        if probe == "found":
+            return owner, repo, probe
+        if probe != "not_found":
+            return None
+    return primary[0], primary[1], "not_found"
 
 
 def _probe_github_repo(host: str, repo_full_name: str) -> _SddRepoProbe:
@@ -905,6 +934,7 @@ def _looks_like_not_found_error(text: str) -> bool:
     markers = (
         "could not resolve to a user",
         "could not resolve to an organization",
+        "could not resolve to a repository",
         "not found",
         "http 404",
         "status code 404",
