@@ -42,6 +42,9 @@ _PR_URL_RE = re.compile(r"https?://[^/]+/.+?/pull/(\d+)")
 _HOSTED_URL_RE = re.compile(r"https?://[^/]+/")
 _GH_REPO_LIST_TIMEOUT_SECONDS = 10
 _SDD_STORE_SCHEMA_VERSION = 1
+_SDD_COMPANION_LABEL = "sase--sdd"
+_SDD_COMPANION_LABEL_DESCRIPTION = "SASE SDD companion repository"
+_SDD_COMPANION_LABEL_COLOR = "0e8a16"
 _DEFAULT_REPO_COMPLETION_LIMIT = 200
 _VcsRepoErrorKind = Literal[
     "auth",
@@ -278,6 +281,45 @@ class GitHubWorkspacePlugin:
         if origin is None:
             return None
 
+        exact_target = _sdd_repo_target_from_options(options, default_host=origin.host)
+        if exact_target is not None:
+            host, owner, repo, remote_url = exact_target
+            repo_full_name = f"{owner}/{repo}"
+            probe, unavailable_message = _probe_github_repo_detail(host, repo_full_name)
+            if probe == "found":
+                _ensure_github_sdd_label(host, repo_full_name)
+                return _sdd_store_record(
+                    host,
+                    repo_full_name,
+                    remote_url,
+                    discovery="found",
+                    created=False,
+                )
+            if probe == "not_found" and not bool(options.get("create")):
+                return _sdd_store_record(
+                    host,
+                    repo_full_name,
+                    remote_url,
+                    discovery="not_found",
+                )
+            if probe == "not_found":
+                created = _create_github_sdd_repo(
+                    host,
+                    repo_full_name,
+                    source_repo_full_name=f"{origin.owner}/{origin.repo}",
+                )
+                _ensure_github_sdd_label(host, repo_full_name)
+                return _sdd_store_record(
+                    host,
+                    repo_full_name,
+                    remote_url,
+                    discovery="found",
+                    created=created,
+                )
+            if unavailable_message:
+                raise RuntimeError(unavailable_message)
+            return None
+
         candidate = _discover_companion_sdd_repo_for_create(
             origin.host,
             _companion_sdd_candidates(origin.owner, origin.repo),
@@ -288,6 +330,7 @@ class GitHubWorkspacePlugin:
         repo_full_name = f"{owner}/{repo}"
         remote_url = _github_ssh_url(origin.host, owner, repo)
         if probe == "found":
+            _ensure_github_sdd_label(origin.host, repo_full_name)
             return _sdd_store_record(
                 origin.host,
                 repo_full_name,
@@ -308,6 +351,7 @@ class GitHubWorkspacePlugin:
                 repo_full_name,
                 source_repo_full_name=f"{origin.owner}/{origin.repo}",
             )
+            _ensure_github_sdd_label(origin.host, repo_full_name)
             return _sdd_store_record(
                 origin.host,
                 repo_full_name,
@@ -565,6 +609,36 @@ def _companion_sdd_repo(owner: str, repo: str) -> tuple[str, str]:
     return _companion_sdd_candidates(owner, repo)[0]
 
 
+def _sdd_repo_target_from_options(
+    options: Mapping[str, object],
+    *,
+    default_host: str,
+) -> tuple[str, str, str, str] | None:
+    raw_repo = options.get("sdd_repo")
+    if not isinstance(raw_repo, str) or not raw_repo.strip():
+        return None
+
+    parts = [part for part in raw_repo.strip().strip("/").split("/") if part]
+    if len(parts) != 2:
+        raise RuntimeError(
+            "materialized SDD store record has invalid GitHub repo metadata"
+        )
+
+    raw_host = options.get("sdd_host")
+    host = (
+        raw_host.strip()
+        if isinstance(raw_host, str) and raw_host.strip()
+        else default_host
+    )
+    raw_remote_url = options.get("sdd_remote_url")
+    remote_url = (
+        raw_remote_url.strip()
+        if isinstance(raw_remote_url, str) and raw_remote_url.strip()
+        else _github_ssh_url(host, parts[0], parts[1])
+    )
+    return host, parts[0], parts[1], remote_url
+
+
 _SddRepoProbe = Literal["found", "not_found", "unavailable"]
 
 
@@ -685,7 +759,7 @@ def _create_github_sdd_repo(
                 "repo",
                 "create",
                 repo_full_name,
-                "--private",
+                "--public",
                 "--description",
                 f"SDD companion repository for {source_repo_full_name}",
             ],
@@ -727,6 +801,74 @@ def _create_github_sdd_repo(
         raise RuntimeError(message)
 
     return True
+
+
+def _ensure_github_sdd_label(host: str, repo_full_name: str) -> None:
+    env = _non_interactive_gh_env()
+    env["GH_HOST"] = host
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "label",
+                "create",
+                _SDD_COMPANION_LABEL,
+                "--repo",
+                repo_full_name,
+                "--description",
+                _SDD_COMPANION_LABEL_DESCRIPTION,
+                "--color",
+                _SDD_COMPANION_LABEL_COLOR,
+                "--force",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_sdd_network_timeout(),
+            env=env,
+            stdin=subprocess.DEVNULL,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "gh not found. Install the GitHub CLI, then re-run `sase sdd init`."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"could not reach {host}. Check your connection, then re-run "
+            "`sase sdd init`."
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(
+            f"could not run gh label create for {repo_full_name}: {exc}"
+        ) from exc
+
+    if result.returncode == 0:
+        return
+
+    detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
+    normalized = detail.casefold()
+    if _looks_like_auth_error(normalized):
+        raise RuntimeError(
+            "GitHub CLI is not authenticated. Run `gh auth login`, then "
+            "re-run `sase sdd init`."
+        )
+    if _looks_like_network_error(normalized):
+        raise RuntimeError(
+            f"could not reach {host}. Check your connection, then re-run "
+            "`sase sdd init`."
+        )
+
+    message = (
+        f"could not create or update GitHub label {_SDD_COMPANION_LABEL} on "
+        f"{repo_full_name}"
+    )
+    if detail:
+        message += f": {detail}"
+    message += (
+        ". Check that your GitHub token has write or label-management "
+        "permissions, then re-run `sase sdd init`."
+    )
+    raise RuntimeError(message)
 
 
 def _sdd_network_timeout() -> float:

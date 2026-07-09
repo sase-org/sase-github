@@ -102,6 +102,22 @@ def _completed(
     )
 
 
+def _sdd_label_create_cmd(repo: str) -> list[str]:
+    return [
+        "gh",
+        "label",
+        "create",
+        "sase--sdd",
+        "--repo",
+        repo,
+        "--description",
+        "SASE SDD companion repository",
+        "--color",
+        "0e8a16",
+        "--force",
+    ]
+
+
 @pytest.fixture(autouse=True)
 def _default_github_host() -> object:
     with patch("sase_github.config.get_default_github_host", return_value="github.com"):
@@ -647,6 +663,10 @@ class TestSddMaterialization:
             "git@github.enterprise.test:acme/widget--sdd.git",
             str(primary / ".sase" / f".sdd.clone-tmp-{os.getpid()}"),
         ]
+        assert all(
+            call[0][0][:3] != ["gh", "label", "create"]
+            for call in mock_run.call_args_list
+        )
 
     def test_org_sdd_repo_is_fallback_when_project_sdd_is_missing(
         self,
@@ -715,12 +735,16 @@ class TestSddMaterialization:
     def test_create_sdd_remote_verifies_existing_repo(self, tmp_path: Path) -> None:
         primary = tmp_path / "widget"
         primary.mkdir()
+        calls: list[list[str]] = []
 
         def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
             if cmd == ["git", "config", "--get", "remote.origin.url"]:
                 return _completed(stdout="https://github.com/acme/widget.git\n")
             if cmd[:3] == ["gh", "repo", "view"]:
                 return _completed(stdout="sdd\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
@@ -734,6 +758,7 @@ class TestSddMaterialization:
         assert record["discovery"] == "found"
         assert record["repo"] == "acme/widget--sdd"
         assert record["created"] is False
+        assert _sdd_label_create_cmd("acme/widget--sdd") in calls
 
     def test_create_sdd_remote_uses_legacy_fallback_when_it_exists(
         self,
@@ -742,8 +767,10 @@ class TestSddMaterialization:
         primary = tmp_path / "widget"
         primary.mkdir()
         viewed: list[str] = []
+        calls: list[list[str]] = []
 
         def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
             if cmd == ["git", "config", "--get", "remote.origin.url"]:
                 return _completed(stdout="https://github.com/acme/widget.git\n")
             if cmd[:3] == ["gh", "repo", "view"]:
@@ -752,6 +779,8 @@ class TestSddMaterialization:
                     return _completed(returncode=1, stderr="repository not found")
                 if cmd[3] == "acme/sdd":
                     return _completed(stdout="sdd\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             if cmd[:3] == ["gh", "repo", "create"]:
                 raise AssertionError("repo must not be created when fallback exists")
             raise AssertionError(f"unexpected command: {cmd}")
@@ -768,6 +797,7 @@ class TestSddMaterialization:
         assert record["repo"] == "acme/sdd"
         assert record["created"] is False
         assert viewed == ["acme/widget--sdd", "acme/sdd"]
+        assert _sdd_label_create_cmd("acme/sdd") in calls
 
     def test_create_sdd_remote_returns_negative_without_create(
         self, tmp_path: Path
@@ -798,7 +828,7 @@ class TestSddMaterialization:
         assert record["repo"] == "acme/widget--sdd"
         assert viewed == ["acme/widget--sdd", "acme/sdd"]
 
-    def test_create_sdd_remote_creates_missing_private_repo(
+    def test_create_sdd_remote_creates_missing_public_repo(
         self, tmp_path: Path
     ) -> None:
         primary = tmp_path / "widget"
@@ -813,6 +843,8 @@ class TestSddMaterialization:
                 return _completed(returncode=1, stderr="repository not found")
             if cmd[:3] == ["gh", "repo", "create"]:
                 return _completed(stdout="created\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
@@ -851,10 +883,12 @@ class TestSddMaterialization:
             "repo",
             "create",
             "acme/widget--sdd",
-            "--private",
+            "--public",
             "--description",
             "SDD companion repository for acme/widget",
         ] in calls
+        assert _sdd_label_create_cmd("acme/widget--sdd") in calls
+        assert all("--private" not in cmd for cmd in calls)
 
     def test_create_sdd_remote_adopts_repo_when_create_reports_existing(
         self, tmp_path: Path
@@ -862,9 +896,11 @@ class TestSddMaterialization:
         primary = tmp_path / "widget"
         primary.mkdir()
         create_seen = False
+        calls: list[list[str]] = []
 
         def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
             nonlocal create_seen
+            calls.append(cmd)
             if cmd == ["git", "config", "--get", "remote.origin.url"]:
                 return _completed(stdout="https://github.com/acme/widget.git\n")
             if cmd[:3] == ["gh", "repo", "view"]:
@@ -874,6 +910,8 @@ class TestSddMaterialization:
             if cmd[:3] == ["gh", "repo", "create"]:
                 create_seen = True
                 return _completed(returncode=1, stderr="name already exists")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
@@ -886,6 +924,48 @@ class TestSddMaterialization:
         assert record is not None
         assert record["repo"] == "acme/widget--sdd"
         assert record["created"] is False
+        assert _sdd_label_create_cmd("acme/widget--sdd") in calls
+
+    def test_create_sdd_remote_verifies_exact_sdd_repo_option(
+        self, tmp_path: Path
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        viewed: list[str] = []
+        calls: list[list[str]] = []
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                viewed.append(cmd[3])
+                assert kwargs["env"]["GH_HOST"] == "github.enterprise.test"
+                return _completed(stdout="custom-sdd\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                assert kwargs["env"]["GH_HOST"] == "github.enterprise.test"
+                return _completed()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_create_sdd_remote(
+                str(primary),
+                str(primary),
+                {
+                    "create": True,
+                    "sdd_repo": "other/custom-sdd",
+                    "sdd_host": "github.enterprise.test",
+                    "sdd_remote_url": "git@github.enterprise.test:other/custom-sdd.git",
+                },
+            )
+
+        assert record is not None
+        assert record["host"] == "github.enterprise.test"
+        assert record["repo"] == "other/custom-sdd"
+        assert record["remote_url"] == "git@github.enterprise.test:other/custom-sdd.git"
+        assert record["created"] is False
+        assert viewed == ["other/custom-sdd"]
+        assert _sdd_label_create_cmd("other/custom-sdd") in calls
 
     def test_transport_probe_failure_does_not_cache_negative_record(
         self,
@@ -953,6 +1033,59 @@ class TestSddMaterialization:
                 )
                 is None
             )
+
+    @pytest.mark.parametrize(
+        ("label_failure", "expected"),
+        [
+            ("missing", "gh not found"),
+            ("timeout", "could not reach github.com"),
+            ("auth", "gh auth login"),
+            ("network", "could not reach github.com"),
+            ("permission", "label-management permissions"),
+        ],
+    )
+    def test_create_sdd_remote_raises_actionable_label_errors(
+        self,
+        tmp_path: Path,
+        label_failure: str,
+        expected: str,
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(stdout="widget--sdd\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                if label_failure == "missing":
+                    raise FileNotFoundError("gh")
+                if label_failure == "timeout":
+                    raise subprocess.TimeoutExpired(cmd, 7)
+                if label_failure == "auth":
+                    return _completed(
+                        returncode=1,
+                        stderr="authentication required; run gh auth login",
+                    )
+                if label_failure == "network":
+                    return _completed(
+                        returncode=1,
+                        stderr="lookup api.github.com: no such host",
+                    )
+                return _completed(
+                    returncode=1,
+                    stderr="Resource not accessible by integration",
+                )
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+            with pytest.raises(RuntimeError, match=expected):
+                GitHubWorkspacePlugin().ws_create_sdd_remote(
+                    str(primary),
+                    str(primary),
+                    {"create": True},
+                )
 
     def test_create_sdd_remote_raises_when_gh_is_missing(
         self,
