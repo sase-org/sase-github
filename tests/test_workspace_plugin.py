@@ -596,11 +596,28 @@ class TestSddMaterialization:
         assert metadata is not None
         assert metadata.sdd_storage_policy == "separate_repo"
 
-    def test_companion_sdd_candidates_prefer_project_specific_repo(self) -> None:
+    def test_companion_sdd_candidates_default_to_project_specific_repo(self) -> None:
         assert _companion_sdd_candidates("acme", "widget") == [
             ("acme", "widget--sdd"),
-            ("acme", "sdd"),
         ]
+
+    def test_companion_sdd_candidates_respect_repo_name_override(self) -> None:
+        with patch(
+            "sase_github.config.load_merged_config",
+            return_value={"sdd": {"repo": {"name": "sdd"}}},
+        ):
+            assert _companion_sdd_candidates("acme", "widget") == [
+                ("acme", "sdd"),
+            ]
+
+    def test_companion_sdd_candidates_respect_owner_repo_override(self) -> None:
+        with patch(
+            "sase_github.config.load_merged_config",
+            return_value={"sdd": {"repo": {"name": "other/custom-sdd"}}},
+        ):
+            assert _companion_sdd_candidates("acme", "widget") == [
+                ("other", "custom-sdd"),
+            ]
 
     def test_found_companion_repo_clones_and_returns_positive_record(
         self,
@@ -668,7 +685,7 @@ class TestSddMaterialization:
             for call in mock_run.call_args_list
         )
 
-    def test_org_sdd_repo_is_fallback_when_project_sdd_is_missing(
+    def test_org_sdd_repo_is_not_default_fallback_when_project_sdd_is_missing(
         self,
         tmp_path: Path,
     ) -> None:
@@ -684,10 +701,9 @@ class TestSddMaterialization:
                 if cmd[3] == "acme/widget--sdd":
                     return _completed(returncode=1, stderr="repository not found")
                 if cmd[3] == "acme/sdd":
-                    return _completed(stdout="sdd\n")
+                    raise AssertionError("org-level sdd must be an explicit override")
             if cmd[:2] == ["git", "clone"]:
-                Path(cmd[-1]).mkdir(parents=True)
-                return _completed()
+                raise AssertionError("missing default companion repo must not clone")
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
@@ -698,10 +714,49 @@ class TestSddMaterialization:
             )
 
         assert record is not None
+        assert record["discovery"] == "not_found"
+        assert record["repo"] == "acme/widget--sdd"
+        assert record["remote_url"] == "git@github.com:acme/widget--sdd.git"
+        assert viewed == ["acme/widget--sdd"]
+
+    def test_sdd_repo_name_override_can_choose_org_sdd_by_name(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        viewed: list[str] = []
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                viewed.append(cmd[3])
+                if cmd[3] == "acme/sdd":
+                    return _completed(stdout="sdd\n")
+            if cmd[:2] == ["git", "clone"]:
+                Path(cmd[-1]).mkdir(parents=True)
+                return _completed()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with (
+            patch(
+                "sase_github.config.load_merged_config",
+                return_value={"sdd": {"repo": {"name": "sdd"}}},
+            ),
+            patch("sase_github.workspace_plugin.subprocess.run", side_effect=run),
+        ):
+            record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
+                str(primary),
+                str(primary),
+                {},
+            )
+
+        assert record is not None
         assert record["discovery"] == "found"
         assert record["repo"] == "acme/sdd"
         assert record["remote_url"] == "git@github.com:acme/sdd.git"
-        assert viewed == ["acme/widget--sdd", "acme/sdd"]
+        assert viewed == ["acme/sdd"]
 
     def test_not_found_probe_returns_negative_record(self, tmp_path: Path) -> None:
         primary = tmp_path / "widget"
@@ -729,7 +784,7 @@ class TestSddMaterialization:
         assert record is not None
         assert record["discovery"] == "not_found"
         assert record["repo"] == "acme/widget--sdd"
-        assert viewed == ["acme/widget--sdd", "acme/sdd"]
+        assert viewed == ["acme/widget--sdd"]
         assert not (primary / ".sase" / "sdd").exists()
 
     def test_create_sdd_remote_verifies_existing_repo(self, tmp_path: Path) -> None:
@@ -760,7 +815,7 @@ class TestSddMaterialization:
         assert record["created"] is False
         assert _sdd_label_create_cmd("acme/widget--sdd") in calls
 
-    def test_create_sdd_remote_uses_legacy_fallback_when_it_exists(
+    def test_create_sdd_remote_creates_project_sdd_even_when_org_sdd_exists(
         self,
         tmp_path: Path,
     ) -> None:
@@ -782,7 +837,7 @@ class TestSddMaterialization:
             if cmd[:3] == ["gh", "label", "create"]:
                 return _completed()
             if cmd[:3] == ["gh", "repo", "create"]:
-                raise AssertionError("repo must not be created when fallback exists")
+                return _completed(stdout="created\n")
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
@@ -794,10 +849,10 @@ class TestSddMaterialization:
 
         assert record is not None
         assert record["discovery"] == "found"
-        assert record["repo"] == "acme/sdd"
-        assert record["created"] is False
-        assert viewed == ["acme/widget--sdd", "acme/sdd"]
-        assert _sdd_label_create_cmd("acme/sdd") in calls
+        assert record["repo"] == "acme/widget--sdd"
+        assert record["created"] is True
+        assert viewed == ["acme/widget--sdd"]
+        assert _sdd_label_create_cmd("acme/widget--sdd") in calls
 
     def test_create_sdd_remote_returns_negative_without_create(
         self, tmp_path: Path
@@ -826,7 +881,7 @@ class TestSddMaterialization:
         assert record is not None
         assert record["discovery"] == "not_found"
         assert record["repo"] == "acme/widget--sdd"
-        assert viewed == ["acme/widget--sdd", "acme/sdd"]
+        assert viewed == ["acme/widget--sdd"]
 
     def test_create_sdd_remote_creates_missing_public_repo(
         self, tmp_path: Path
@@ -863,16 +918,6 @@ class TestSddMaterialization:
             "repo",
             "view",
             "acme/widget--sdd",
-            "--json",
-            "name",
-            "-q",
-            ".name",
-        ] in calls
-        assert [
-            "gh",
-            "repo",
-            "view",
-            "acme/sdd",
             "--json",
             "name",
             "-q",
@@ -1161,12 +1206,10 @@ class TestSddMaterialization:
                 if cwd == primary:
                     return _completed(stdout="https://github.com/acme/widget.git\n")
                 if cwd == sdd_dir:
-                    return _completed(stdout="git@github.com:acme/sdd.git\n")
+                    return _completed(stdout="git@github.com:acme/widget--sdd.git\n")
             if cmd[:3] == ["gh", "repo", "view"]:
                 if cmd[3] == "acme/widget--sdd":
-                    return _completed(returncode=1, stderr="repository not found")
-                if cmd[3] == "acme/sdd":
-                    return _completed(stdout="sdd\n")
+                    return _completed(stdout="widget--sdd\n")
             if cmd[:2] == ["git", "clone"]:
                 raise AssertionError("matching SDD remote should be adopted")
             raise AssertionError(f"unexpected command: {cmd}")
@@ -1180,7 +1223,7 @@ class TestSddMaterialization:
 
         assert record is not None
         assert record["discovery"] == "found"
-        assert record["remote_url"] == "git@github.com:acme/sdd.git"
+        assert record["remote_url"] == "git@github.com:acme/widget--sdd.git"
 
     def test_sdd_repo_name_override_can_choose_owner_and_name(
         self,

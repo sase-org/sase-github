@@ -595,7 +595,7 @@ def _companion_sdd_candidates(owner: str, repo: str) -> list[tuple[str, str]]:
 
     override = get_sdd_repo_name_override()
     if override is None:
-        return [(owner, f"{repo}--sdd"), (owner, "sdd")]
+        return [(owner, f"{repo}--sdd")]
 
     parts = [part for part in override.strip("/").split("/") if part]
     if len(parts) == 1:
