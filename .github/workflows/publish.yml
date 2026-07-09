@@ -76,8 +76,8 @@ jobs:
       - name: Install built sase-github wheel into a fresh venv
         run: |
           uv venv --python 3.12 /tmp/smoke-venv
-          uv pip install --python /tmp/smoke-venv/bin/python "${SASE_CORE_PATH}"
-          uv pip install --python /tmp/smoke-venv/bin/python dist/*.whl
+          printf -- '-e %s\n' "$(realpath "${SASE_CORE_PATH}")" > /tmp/sase-overrides.txt
+          uv pip install --python /tmp/smoke-venv/bin/python --overrides /tmp/sase-overrides.txt dist/*.whl
       - name: Smoke check
         run: |
           /tmp/smoke-venv/bin/python - <<'PY'
