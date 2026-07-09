@@ -278,13 +278,13 @@ class GitHubWorkspacePlugin:
         if origin is None:
             return None
 
-        candidate = _discover_companion_sdd_repo(
+        candidate = _discover_companion_sdd_repo_for_create(
             origin.host,
             _companion_sdd_candidates(origin.owner, origin.repo),
         )
         if candidate is None:
             return None
-        owner, repo, probe = candidate
+        owner, repo, probe, unavailable_message = candidate
         repo_full_name = f"{owner}/{repo}"
         remote_url = _github_ssh_url(origin.host, owner, repo)
         if probe == "found":
@@ -293,6 +293,7 @@ class GitHubWorkspacePlugin:
                 repo_full_name,
                 remote_url,
                 discovery="found",
+                created=False,
             )
         if probe == "not_found" and not bool(options.get("create")):
             return _sdd_store_record(
@@ -302,13 +303,20 @@ class GitHubWorkspacePlugin:
                 discovery="not_found",
             )
         if probe == "not_found":
-            _create_github_sdd_repo(origin.host, repo_full_name)
+            created = _create_github_sdd_repo(
+                origin.host,
+                repo_full_name,
+                source_repo_full_name=f"{origin.owner}/{origin.repo}",
+            )
             return _sdd_store_record(
                 origin.host,
                 repo_full_name,
                 remote_url,
                 discovery="found",
+                created=created,
             )
+        if unavailable_message:
+            raise RuntimeError(unavailable_message)
         return None
 
     @hookimpl
@@ -543,7 +551,7 @@ def _companion_sdd_candidates(owner: str, repo: str) -> list[tuple[str, str]]:
 
     override = get_sdd_repo_name_override()
     if override is None:
-        return [(owner, "sdd"), (owner, f"{repo}-sdd")]
+        return [(owner, f"{repo}--sdd"), (owner, "sdd")]
 
     parts = [part for part in override.strip("/").split("/") if part]
     if len(parts) == 1:
@@ -575,7 +583,29 @@ def _discover_companion_sdd_repo(
     return primary[0], primary[1], "not_found"
 
 
+def _discover_companion_sdd_repo_for_create(
+    host: str,
+    candidates: Sequence[tuple[str, str]],
+) -> tuple[str, str, _SddRepoProbe, str | None] | None:
+    primary = candidates[0]
+    for owner, repo in candidates:
+        repo_full_name = f"{owner}/{repo}"
+        probe, unavailable_message = _probe_github_repo_detail(host, repo_full_name)
+        if probe == "found":
+            return owner, repo, probe, None
+        if probe != "not_found":
+            return owner, repo, probe, unavailable_message
+    return primary[0], primary[1], "not_found", None
+
+
 def _probe_github_repo(host: str, repo_full_name: str) -> _SddRepoProbe:
+    probe, _message = _probe_github_repo_detail(host, repo_full_name)
+    return probe
+
+
+def _probe_github_repo_detail(
+    host: str, repo_full_name: str
+) -> tuple[_SddRepoProbe, str | None]:
     env = _non_interactive_gh_env()
     env["GH_HOST"] = host
     try:
@@ -597,25 +627,68 @@ def _probe_github_repo(host: str, repo_full_name: str) -> _SddRepoProbe:
             env=env,
             stdin=subprocess.DEVNULL,
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return "unavailable"
+    except FileNotFoundError:
+        return (
+            "unavailable",
+            "gh not found. Install the GitHub CLI, then re-run `sase sdd init`.",
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            "unavailable",
+            f"could not reach {host}. Check your connection, then re-run "
+            "`sase sdd init`.",
+        )
+    except OSError as exc:
+        return (
+            "unavailable",
+            f"could not run gh repo view for {repo_full_name}: {exc}",
+        )
 
     if result.returncode == 0:
-        return "found"
+        return "found", None
 
     output = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
     normalized = output.casefold()
     if _looks_like_not_found_error(normalized):
-        return "not_found"
-    return "unavailable"
+        return "not_found", None
+    if _looks_like_auth_error(normalized):
+        return (
+            "unavailable",
+            "GitHub CLI is not authenticated. Run `gh auth login`, then "
+            "re-run `sase sdd init`.",
+        )
+    if _looks_like_network_error(normalized):
+        return (
+            "unavailable",
+            f"could not reach {host}. Check your connection, then re-run "
+            "`sase sdd init`.",
+        )
+    detail = output.splitlines()[0] if output else "unknown gh repo view failure"
+    return (
+        "unavailable",
+        f"could not verify GitHub repository {repo_full_name}: {detail}",
+    )
 
 
-def _create_github_sdd_repo(host: str, repo_full_name: str) -> None:
+def _create_github_sdd_repo(
+    host: str,
+    repo_full_name: str,
+    *,
+    source_repo_full_name: str,
+) -> bool:
     env = _non_interactive_gh_env()
     env["GH_HOST"] = host
     try:
         result = subprocess.run(
-            ["gh", "repo", "create", repo_full_name, "--private"],
+            [
+                "gh",
+                "repo",
+                "create",
+                repo_full_name,
+                "--private",
+                "--description",
+                f"SDD companion repository for {source_repo_full_name}",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -624,19 +697,36 @@ def _create_github_sdd_repo(host: str, repo_full_name: str) -> None:
             stdin=subprocess.DEVNULL,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError("gh repo create failed: gh command not found") from exc
+        raise RuntimeError(
+            "gh not found. Install the GitHub CLI, then re-run `sase sdd init`."
+        ) from exc
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("gh repo create timed out") from exc
+        raise RuntimeError(
+            f"could not reach {host}. Check your connection, then re-run "
+            "`sase sdd init`."
+        ) from exc
     except OSError as exc:
         raise RuntimeError(f"gh repo create failed: {exc}") from exc
+
+    if result.returncode == 0:
+        return True
 
     if result.returncode != 0:
         detail = "\n".join(part for part in (result.stderr, result.stdout) if part)
         detail = detail.strip()
+        normalized = detail.casefold()
+        if _looks_like_already_exists_error(normalized) and (
+            _probe_github_repo(host, repo_full_name) == "found"
+        ):
+            return False
         message = f"gh repo create failed for {repo_full_name}"
         if detail:
             message += f": {detail}"
+        owner = repo_full_name.split("/", 1)[0]
+        message += f". You may lack repo-create rights in {owner}."
         raise RuntimeError(message)
+
+    return True
 
 
 def _sdd_network_timeout() -> float:
@@ -654,8 +744,9 @@ def _sdd_store_record(
     remote_url: str,
     *,
     discovery: str,
+    created: bool | None = None,
 ) -> dict[str, object]:
-    return {
+    record: dict[str, object] = {
         "schema_version": _SDD_STORE_SCHEMA_VERSION,
         "storage": "separate_repo",
         "provider": "github",
@@ -664,6 +755,9 @@ def _sdd_store_record(
         "remote_url": remote_url,
         "discovery": discovery,
     }
+    if created is not None:
+        record["created"] = created
+    return record
 
 
 def _remote_matches_repo(
@@ -938,6 +1032,16 @@ def _looks_like_not_found_error(text: str) -> bool:
         "not found",
         "http 404",
         "status code 404",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _looks_like_already_exists_error(text: str) -> bool:
+    markers = (
+        "already exists",
+        "already taken",
+        "name already exists",
+        "name is already taken",
     )
     return any(marker in text for marker in markers)
 
