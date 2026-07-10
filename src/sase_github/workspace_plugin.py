@@ -208,66 +208,57 @@ class GitHubWorkspacePlugin:
         workspace_dir: str,
         options: dict[str, object],
     ) -> dict[str, object] | None:
-        """Discover and materialize the GitHub companion SDD repository."""
+        """Find or create, label, and stage the GitHub companion repository."""
         origin = _read_github_origin(primary_workspace_dir)
         if origin is None:
             return None
 
-        candidate = _discover_companion_sdd_repo(
-            origin.host,
-            _companion_sdd_candidates(origin.owner, origin.repo),
+        create_options = dict(options)
+        create_options["create"] = True
+        record = self.ws_create_sdd_remote(
+            primary_workspace_dir,
+            workspace_dir,
+            create_options,
         )
-        if candidate is None:
+        if record is None:
             return None
-        owner, repo, probe = candidate
-        repo_full_name = f"{owner}/{repo}"
-        remote_url = _github_ssh_url(origin.host, owner, repo)
-        if probe == "not_found":
-            return _sdd_store_record(
-                origin.host,
-                repo_full_name,
-                remote_url,
-                discovery="not_found",
+        if record.get("discovery") == "not_found":
+            raise RuntimeError(
+                "GitHub provider did not create the mandatory companion SDD repository"
             )
-        if probe != "found":
-            return None
 
-        sdd_dir = Path(primary_workspace_dir).expanduser() / ".sase" / "sdd"
+        repo_full_name = str(record.get("repo") or "")
+        parts = repo_full_name.split("/", 1)
+        if len(parts) != 2 or not all(parts):
+            raise RuntimeError(
+                "GitHub provider returned an invalid SDD repository name"
+            )
+        owner, repo = parts
+        host = str(record.get("host") or origin.host)
+        target_option = options.get("staging_dir")
+        sdd_dir = (
+            Path(str(target_option)).expanduser()
+            if isinstance(target_option, str) and target_option
+            else Path(primary_workspace_dir).expanduser() / ".sase" / "sdd"
+        )
         existing_remote = (
             _read_git_origin(sdd_dir) if (sdd_dir / ".git").is_dir() else None
         )
-        if existing_remote is not None:
-            if _remote_matches_repo(existing_remote, origin.host, owner, repo):
-                return _sdd_store_record(
-                    origin.host,
-                    repo_full_name,
-                    existing_remote,
-                    discovery="found",
-                )
-            _print_sdd_adoption_notice(sdd_dir, repo_full_name)
-            return _sdd_store_record(
-                origin.host,
-                repo_full_name,
-                remote_url,
-                discovery="not_found",
-            )
-
+        if existing_remote and _remote_matches_repo(existing_remote, host, owner, repo):
+            record["remote_url"] = existing_remote
+            return record
         if _path_has_content(sdd_dir):
-            _print_sdd_adoption_notice(sdd_dir, repo_full_name)
-            return _sdd_store_record(
-                origin.host,
-                repo_full_name,
-                remote_url,
-                discovery="not_found",
-            )
+            if target_option:
+                raise RuntimeError(
+                    f"SDD materialization staging path is not empty: {sdd_dir}"
+                )
+            # Core owns lossless reconciliation for a legacy primary path.
+            return record
 
-        cloned_remote_url = _clone_sdd_repo(owner, repo, sdd_dir, host=origin.host)
-        return _sdd_store_record(
-            origin.host,
-            repo_full_name,
-            cloned_remote_url,
-            discovery="found",
-        )
+        cloned_remote_url = _clone_sdd_repo(owner, repo, sdd_dir, host=host)
+        record["remote_url"] = cloned_remote_url
+        record["discovery"] = "found"
+        return record
 
     @hookimpl
     def ws_create_sdd_remote(
@@ -294,13 +285,6 @@ class GitHubWorkspacePlugin:
                     remote_url,
                     discovery="found",
                     created=False,
-                )
-            if probe == "not_found" and not bool(options.get("create")):
-                return _sdd_store_record(
-                    host,
-                    repo_full_name,
-                    remote_url,
-                    discovery="not_found",
                 )
             if probe == "not_found":
                 created = _create_github_sdd_repo(
@@ -337,13 +321,6 @@ class GitHubWorkspacePlugin:
                 remote_url,
                 discovery="found",
                 created=False,
-            )
-        if probe == "not_found" and not bool(options.get("create")):
-            return _sdd_store_record(
-                origin.host,
-                repo_full_name,
-                remote_url,
-                discovery="not_found",
             )
         if probe == "not_found":
             created = _create_github_sdd_repo(
@@ -930,15 +907,6 @@ def _path_has_content(path: Path) -> bool:
     except StopIteration:
         return False
     return True
-
-
-def _print_sdd_adoption_notice(sdd_dir: Path, repo_full_name: str) -> None:
-    print(
-        "Existing SDD store at "
-        f"{sdd_dir} does not match GitHub companion repo {repo_full_name}; "
-        "leaving local SDD storage in place. Run `sase sdd migrate` to adopt it.",
-        file=sys.stderr,
-    )
 
 
 def _clone_sdd_repo(user: str, project: str, target_dir: Path, *, host: str) -> str:

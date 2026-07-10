@@ -635,6 +635,8 @@ class TestSddMaterialization:
                 )
             if cmd[:3] == ["gh", "repo", "view"]:
                 return _completed(stdout="sdd\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             if cmd[:2] == ["git", "clone"]:
                 Path(cmd[-1]).mkdir(parents=True)
                 return _completed()
@@ -667,25 +669,33 @@ class TestSddMaterialization:
             "repo": "acme/widget--sdd",
             "remote_url": "git@github.enterprise.test:acme/widget--sdd.git",
             "discovery": "found",
+            "created": False,
         }
         assert (primary / ".sase" / "sdd").is_dir()
-        gh_call = mock_run.call_args_list[1]
+        gh_call = next(
+            call
+            for call in mock_run.call_args_list
+            if call[0][0][:3] == ["gh", "repo", "view"]
+        )
         assert gh_call[0][0][:4] == ["gh", "repo", "view", "acme/widget--sdd"]
         assert gh_call.kwargs["env"]["GH_HOST"] == "github.enterprise.test"
         assert gh_call.kwargs["timeout"] == 7.0
-        clone_call = mock_run.call_args_list[2]
+        clone_call = next(
+            call
+            for call in mock_run.call_args_list
+            if call[0][0][:2] == ["git", "clone"]
+        )
         assert clone_call[0][0] == [
             "git",
             "clone",
             "git@github.enterprise.test:acme/widget--sdd.git",
             str(primary / ".sase" / f".sdd.clone-tmp-{os.getpid()}"),
         ]
-        assert all(
-            call[0][0][:3] != ["gh", "label", "create"]
-            for call in mock_run.call_args_list
-        )
+        assert _sdd_label_create_cmd("acme/widget--sdd") in [
+            call[0][0] for call in mock_run.call_args_list
+        ]
 
-    def test_org_sdd_repo_is_not_default_fallback_when_project_sdd_is_missing(
+    def test_missing_project_companion_is_created_without_org_fallback(
         self,
         tmp_path: Path,
     ) -> None:
@@ -702,8 +712,13 @@ class TestSddMaterialization:
                     return _completed(returncode=1, stderr="repository not found")
                 if cmd[3] == "acme/sdd":
                     raise AssertionError("org-level sdd must be an explicit override")
+            if cmd[:3] == ["gh", "repo", "create"]:
+                return _completed(stdout="created\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             if cmd[:2] == ["git", "clone"]:
-                raise AssertionError("missing default companion repo must not clone")
+                Path(cmd[-1]).mkdir(parents=True)
+                return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
@@ -714,7 +729,8 @@ class TestSddMaterialization:
             )
 
         assert record is not None
-        assert record["discovery"] == "not_found"
+        assert record["discovery"] == "found"
+        assert record["created"] is True
         assert record["repo"] == "acme/widget--sdd"
         assert record["remote_url"] == "git@github.com:acme/widget--sdd.git"
         assert viewed == ["acme/widget--sdd"]
@@ -734,6 +750,8 @@ class TestSddMaterialization:
                 viewed.append(cmd[3])
                 if cmd[3] == "acme/sdd":
                     return _completed(stdout="sdd\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             if cmd[:2] == ["git", "clone"]:
                 Path(cmd[-1]).mkdir(parents=True)
                 return _completed()
@@ -758,7 +776,7 @@ class TestSddMaterialization:
         assert record["remote_url"] == "git@github.com:acme/sdd.git"
         assert viewed == ["acme/sdd"]
 
-    def test_not_found_probe_returns_negative_record(self, tmp_path: Path) -> None:
+    def test_not_found_probe_creates_labels_and_clones(self, tmp_path: Path) -> None:
         primary = tmp_path / "widget"
         primary.mkdir()
         viewed: list[str] = []
@@ -772,6 +790,13 @@ class TestSddMaterialization:
                     returncode=1,
                     stderr="GraphQL: Could not resolve to a Repository.",
                 )
+            if cmd[:3] == ["gh", "repo", "create"]:
+                return _completed(stdout="created\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
+            if cmd[:2] == ["git", "clone"]:
+                Path(cmd[-1]).mkdir(parents=True)
+                return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
@@ -782,10 +807,11 @@ class TestSddMaterialization:
             )
 
         assert record is not None
-        assert record["discovery"] == "not_found"
+        assert record["discovery"] == "found"
+        assert record["created"] is True
         assert record["repo"] == "acme/widget--sdd"
         assert viewed == ["acme/widget--sdd"]
-        assert not (primary / ".sase" / "sdd").exists()
+        assert (primary / ".sase" / "sdd").is_dir()
 
     def test_create_sdd_remote_verifies_existing_repo(self, tmp_path: Path) -> None:
         primary = tmp_path / "widget"
@@ -854,7 +880,7 @@ class TestSddMaterialization:
         assert viewed == ["acme/widget--sdd"]
         assert _sdd_label_create_cmd("acme/widget--sdd") in calls
 
-    def test_create_sdd_remote_returns_negative_without_create(
+    def test_create_sdd_remote_always_creates_when_missing(
         self, tmp_path: Path
     ) -> None:
         primary = tmp_path / "widget"
@@ -868,7 +894,9 @@ class TestSddMaterialization:
                 viewed.append(cmd[3])
                 return _completed(returncode=1, stderr="repository not found")
             if cmd[:3] == ["gh", "repo", "create"]:
-                raise AssertionError("repo must not be created without --create")
+                return _completed(stdout="created\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
@@ -879,7 +907,8 @@ class TestSddMaterialization:
             )
 
         assert record is not None
-        assert record["discovery"] == "not_found"
+        assert record["discovery"] == "found"
+        assert record["created"] is True
         assert record["repo"] == "acme/widget--sdd"
         assert viewed == ["acme/widget--sdd"]
 
@@ -1029,13 +1058,13 @@ class TestSddMaterialization:
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
-            record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
-                str(primary),
-                str(primary),
-                {},
-            )
+            with pytest.raises(RuntimeError, match="could not reach github.com"):
+                GitHubWorkspacePlugin().ws_materialize_sdd_store(
+                    str(primary),
+                    str(primary),
+                    {},
+                )
 
-        assert record is None
         assert not (primary / ".sase" / "sdd").exists()
 
     @pytest.mark.parametrize(
@@ -1070,14 +1099,12 @@ class TestSddMaterialization:
                 )
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
-            assert (
+            with pytest.raises(RuntimeError, match=expected):
                 GitHubWorkspacePlugin().ws_materialize_sdd_store(
                     str(primary),
                     str(primary),
                     {},
                 )
-                is None
-            )
 
     @pytest.mark.parametrize(
         ("label_failure", "expected"),
@@ -1155,14 +1182,12 @@ class TestSddMaterialization:
                 )
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
-            assert (
+            with pytest.raises(RuntimeError, match="gh not found"):
                 GitHubWorkspacePlugin().ws_materialize_sdd_store(
                     str(primary),
                     str(primary),
                     {},
                 )
-                is None
-            )
 
     def test_existing_local_sdd_content_is_not_clobbered(
         self,
@@ -1179,6 +1204,8 @@ class TestSddMaterialization:
                 return _completed(stdout="https://github.com/acme/widget.git\n")
             if cmd[:3] == ["gh", "repo", "view"]:
                 return _completed(stdout="widget--sdd\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             if cmd[:2] == ["git", "clone"]:
                 raise AssertionError("local SDD content must not be clobbered")
             raise AssertionError(f"unexpected command: {cmd}")
@@ -1191,9 +1218,9 @@ class TestSddMaterialization:
             )
 
         assert record is not None
-        assert record["discovery"] == "not_found"
+        assert record["discovery"] == "found"
         assert (sdd_dir / "README.md").read_text(encoding="utf-8") == "local"
-        assert "sase sdd migrate" in capsys.readouterr().err
+        assert capsys.readouterr().err == ""
 
     def test_existing_matching_sdd_remote_is_adopted(self, tmp_path: Path) -> None:
         primary = tmp_path / "widget"
@@ -1210,6 +1237,8 @@ class TestSddMaterialization:
             if cmd[:3] == ["gh", "repo", "view"]:
                 if cmd[3] == "acme/widget--sdd":
                     return _completed(stdout="widget--sdd\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             if cmd[:2] == ["git", "clone"]:
                 raise AssertionError("matching SDD remote should be adopted")
             raise AssertionError(f"unexpected command: {cmd}")
@@ -1237,6 +1266,8 @@ class TestSddMaterialization:
                 return _completed(stdout="https://github.com/acme/widget.git\n")
             if cmd[:3] == ["gh", "repo", "view"]:
                 return _completed(stdout="custom-sdd\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
             if cmd[:2] == ["git", "clone"]:
                 Path(cmd[-1]).mkdir(parents=True)
                 return _completed()
@@ -1259,9 +1290,13 @@ class TestSddMaterialization:
 
         assert record is not None
         assert record["repo"] == "other/custom-sdd"
-        assert mock_run.call_args_list[1][0][0][3] == "other/custom-sdd"
-        assert mock_run.call_args_list[2][0][0][2] == (
-            "git@github.com:other/custom-sdd.git"
+        calls = [call[0][0] for call in mock_run.call_args_list]
+        assert any(
+            call[:4] == ["gh", "repo", "view", "other/custom-sdd"] for call in calls
+        )
+        assert any(
+            call[:3] == ["git", "clone", "git@github.com:other/custom-sdd.git"]
+            for call in calls
         )
 
 
@@ -1672,6 +1707,39 @@ class TestGhSetup:
             gh_setup.main(gh_ref="acme/widget", n=None, release=False)
 
         materialize.assert_called_once_with("/work/widget_7/", 7)
+
+    def test_materialization_failure_prevents_workspace_claim(self) -> None:
+        from sase_github.scripts import gh_setup
+
+        resolved = ResolvedRef(
+            project_file="/tmp/gh_acme__widget.sase",
+            project_name="gh_acme__widget",
+            primary_workspace_dir="/work/widget/",
+            checkout_target="origin/main",
+            canonical_ref="gh_acme__widget",
+        )
+
+        with (
+            patch("sase_github.scripts.gh_setup.resolve_ref", return_value=resolved),
+            patch.dict(os.environ, {"SASE_GH_PRE_ALLOCATED": "0"}),
+            patch(
+                "sase_github.scripts.gh_setup.ensure_workspace_checkout",
+                return_value="/work/widget_7/",
+            ),
+            patch(
+                "sase_github.scripts.gh_setup.get_first_available_axe_workspace",
+                return_value=7,
+            ),
+            patch("sase_github.scripts.gh_setup.claim_workspace") as claim,
+            patch(
+                "sase_github.scripts.gh_setup.materialize_sdd_store",
+                side_effect=RuntimeError("companion setup failed"),
+            ),
+            pytest.raises(RuntimeError, match="companion setup failed"),
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=False)
+
+        claim.assert_not_called()
 
 
 # ── detect_workflow_type (via plugin) ────────────────────────────────

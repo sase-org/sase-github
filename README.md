@@ -59,7 +59,8 @@ Requires `sase>=0.11.0` as a dependency. For GitHub Enterprise Server or self-ho
 
 - **GitHubWorkspacePlugin** — Workspace provider that handles GitHub-specific workflow orchestration: reference
   resolution (repo paths, project names, changespec names), PR submission via `gh pr merge`, branch management, and
-  commit description formatting
+  commit description formatting. It also owns GitHub SDD policy: every GitHub project requires a labeled companion
+  repository, materialized before `#gh` work starts.
 - **Repo completion for `#gh:<owner>/` refs** — Supplies repository candidates to SASE prompt completion by calling
   `gh repo list <owner>`. Authenticated `gh` sessions include private repositories the user can access, and configured
   GitHub Enterprise hosts are respected through `GH_HOST`.
@@ -92,16 +93,19 @@ itself with sase core:
 - **`sase_xprompts`** — Makes GitHub xprompts discoverable via plugin discovery
 
 When sase detects a repository whose remote origin host is in the configured GitHub host set, it automatically loads
-`GitHubPlugin` and `GitHubWorkspacePlugin` to handle VCS operations like PR creation, branch management, commit
-workflows, and PR submission.
+`GitHubPlugin` and `GitHubWorkspacePlugin` to handle VCS operations and provider-owned SDD storage. The first `#gh` or
+`sase sdd init` setup finds or creates `<owner>/<repo>--sdd`, applies the `sase--sdd` label, and stages its clone for
+transactional adoption by SASE core. Authentication, permission, network, repository creation, label, clone, import,
+or initial-push failures stop setup; there is no GitHub-local SDD fallback.
 
 ## Requirements
 
 - Python 3.12+
 - [sase](https://github.com/sase-org/sase) >= 0.11.0
-- [gh](https://cli.github.com/) CLI (for GitHub API operations and `#gh:<owner>/` repository completion). Run
-  `gh auth login` so private repositories and higher API limits are available. For GitHub Enterprise, run
-  `gh auth login --hostname <host>` for each configured Enterprise host.
+- [gh](https://cli.github.com/) CLI (for GitHub API operations, mandatory companion repository setup, and
+  `#gh:<owner>/` repository completion). Run `gh auth login`; the account must be able to create the companion when it
+  is missing and manage its labels. For GitHub Enterprise, run `gh auth login --hostname <host>` for each configured
+  Enterprise host.
 
 See [Configuration](docs/configuration.md) for `github_hosts`, `github_orgs`, workspace layout, and the ordered GitHub
 Enterprise setup flow.

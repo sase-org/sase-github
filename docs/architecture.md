@@ -46,9 +46,16 @@ Handles higher-level workflow orchestration. Implements workspace hooks for GitH
 | `ws_generate_submitted_check_script()` | Generates a bash script that checks if a PR is merged via `gh pr view`            |
 | `ws_supports_reviewer_comments()`      | Returns `False` for GitHub URLs (critique comments not supported)                 |
 | `ws_get_workspace_directory()`         | Ensures git clone exists via `ensure_git_clone()`                                 |
+| `ws_materialize_sdd_store()`           | Finds or creates, labels, and stages the mandatory GitHub SDD companion           |
+| `ws_create_sdd_remote()`               | Verifies or creates the selected companion repository and returns a positive record |
 | `ws_prepare_mail()`                    | Displays branch/description and prompts user before pushing                       |
 | `ws_format_commit_description()`       | Prepends `[project]` prefix to commit messages                                    |
 | `ws_submit()`                          | Submits a ChangeSpec by merging its PR via `gh pr merge --merge --delete-branch`  |
+
+The provider declares `separate_repo` SDD policy. Core supplies a unique staging path; the plugin finds or creates the
+selected companion, ensures its `sase--sdd` label, and clones with the normal SSH/HTTPS fallback. It returns only a
+positive materialized record. SASE core owns legacy-artifact conflict checks, import, initial commit/push, atomic
+adoption, and the durable primary-workspace record.
 
 ## Reference Resolution
 

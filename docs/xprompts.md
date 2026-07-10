@@ -21,7 +21,8 @@ the target branch, and captures diffs.
 
 ### Steps
 
-1. **setup** — Resolves the `gh_ref` to a project file, workspace directory, and checkout target. Claims the workspace.
+1. **setup** — Resolves the `gh_ref`, ensures the checkout, materializes the mandatory GitHub SDD companion, and only
+   then claims the workspace. Companion setup failures stop the workflow before the claim or agent launch.
 2. **prepare** — Stashes uncommitted changes (including untracked files) and fetches from origin.
 3. **checkout** — Checks out the target branch/commit. Falls back to `master`/`main` for project refs. Pulls with
    rebase to sync with remote.

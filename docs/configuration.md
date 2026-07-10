@@ -15,8 +15,8 @@ Use this checklist for GitHub Enterprise Server or another self-hosted GitHub ho
    gh auth login --hostname github.mycompany.com
    ```
 
-   Repo-scoped `gh` commands auto-detect the host from the git remote, so this host-specific login is enough for PR
-   operations once the repo is cloned.
+   Repo-scoped `gh` commands auto-detect the host from the git remote. The authenticated account must also be able to
+   create the mandatory SDD companion when missing and manage its `sase--sdd` label.
 3. **Set `github_hosts` in `~/.config/sase/sase.yml`.** **Put your Enterprise host first** if you want bare
    `#gh(owner/repo)` refs to clone from Enterprise. `github.com` is always included implicitly, but the first configured
    host is the default for bare refs; listing `github.com` first means bare refs default there instead. See
@@ -89,11 +89,20 @@ Currently the default config defines:
 
 ## Requirements
 
-- **`gh` CLI** — Required for all PR operations. Install from https://cli.github.com/ and authenticate with
-  `gh auth login`. It is also used for `#gh:<owner>/` repository completion via `gh repo list <owner>`, including
-  private repositories visible to the authenticated account. For GitHub Enterprise, authenticate to the configured host
-  with `gh auth login --hostname github.mycompany.com`.
+- **`gh` CLI** — Required for PR operations and mandatory SDD companion discovery, creation, and labeling. Install from
+  https://cli.github.com/ and authenticate with `gh auth login`; ensure the account can create the companion when
+  missing and manage its labels. It is also used for `#gh:<owner>/` repository completion via `gh repo list <owner>`,
+  including private repositories visible to the authenticated account. For GitHub Enterprise, authenticate to the
+  configured host with `gh auth login --hostname github.mycompany.com`.
 - **Git** — Standard git CLI for repository operations.
+
+## SDD companion repository
+
+GitHub provider policy requires a companion repository for every project. The default is `<owner>/<repo>--sdd`; an
+explicit SASE `sdd.repo.name` value may select `name` or `owner/name`. New companions are public by default, while an
+existing private companion remains private. `#gh` setup and `sase sdd init` fail closed if discovery, creation,
+labeling, cloning, core import, or the initial push fails. Fix `gh auth status`, repository permissions, network access,
+or legacy artifact conflicts and retry; SASE does not switch GitHub projects to a local store.
 
 ## Workspace Layout
 
