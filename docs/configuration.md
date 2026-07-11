@@ -104,6 +104,12 @@ existing private companion remains private. `#gh` setup and `sase sdd init` fail
 labeling, cloning, core import, or the initial push fails. Fix `gh auth status`, repository permissions, network access,
 or legacy artifact conflicts and retry; SASE does not switch GitHub projects to a local store.
 
+For explicit `sase sdd init`, authoritative read-only discovery precedes materialization. If the companion is missing,
+only `y` or `yes` at the default-no prompt naming its visibility, full name, and host grants creation authorization for
+that invocation. Non-interactive stdin and bare `sase init --yes` cannot grant it. A companion found during preflight
+receives no creation authorization, so if it disappears before materialization the provider stops instead of silently
+recreating it. `#gh` setup and other non-explicit materialization paths retain provider-owned creation behavior.
+
 ## Workspace Layout
 
 Primary GitHub workspaces are stored under `~/projects/github/<user>/<project>/` when first resolved from a

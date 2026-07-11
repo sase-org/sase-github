@@ -98,6 +98,12 @@ When sase detects a repository whose remote origin host is in the configured Git
 transactional adoption by SASE core. Authentication, permission, network, repository creation, label, clone, import,
 or initial-push failures stop setup; there is no GitHub-local SDD fallback.
 
+The explicit `sase sdd init` flow first uses a read-only `gh repo view` preflight. Existing companions connect without
+a creation prompt. A missing companion requires a fresh, default-no interactive `y`/`yes` response to `Create public
+GitHub SDD companion repository <owner>/<repo>--sdd on <host>? [y/N]`. Non-interactive stdin, EOF, interruption, and
+bare `sase init --yes` cannot authorize creation. Other provider-owned materialization consumers, including `#gh`
+setup, retain their existing behavior.
+
 ## Requirements
 
 - Python 3.12+

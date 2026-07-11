@@ -596,6 +596,130 @@ class TestSddMaterialization:
         assert metadata is not None
         assert metadata.sdd_storage_policy == "separate_repo"
 
+    @pytest.mark.parametrize(
+        ("config", "expected_repo"),
+        [
+            ({}, "acme/widget--sdd"),
+            ({"sdd": {"repo": {"name": "other/custom-sdd"}}}, "other/custom-sdd"),
+        ],
+    )
+    def test_preflight_reports_missing_companion_without_mutations(
+        self,
+        tmp_path: Path,
+        config: dict[str, object],
+        expected_repo: str,
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        calls: list[list[str]] = []
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(
+                    stdout="https://github.enterprise.test/acme/widget.git\n"
+                )
+            if cmd[:3] == ["gh", "repo", "view"]:
+                assert kwargs["env"]["GH_HOST"] == "github.enterprise.test"
+                return _completed(returncode=1, stderr="repository not found")
+            raise AssertionError(f"unexpected mutating command: {cmd}")
+
+        merged = {"github_hosts": ["github.enterprise.test"], **config}
+        with (
+            patch("sase_github.config.load_merged_config", return_value=merged),
+            patch("sase_github.workspace_plugin.subprocess.run", side_effect=run),
+        ):
+            result = GitHubWorkspacePlugin().ws_preflight_sdd_companion(
+                str(primary),
+                str(primary),
+                {},
+            )
+
+        assert result is not None
+        assert result.status == "not_found"
+        assert result.provider == "GitHub"
+        assert result.host == "github.enterprise.test"
+        assert result.repo == expected_repo
+        assert result.visibility == "public"
+        assert [cmd[:3] for cmd in calls] == [
+            ["git", "config", "--get"],
+            ["gh", "repo", "view"],
+        ]
+        assert not (primary / ".sase").exists()
+
+    def test_preflight_reports_existing_and_unavailable_companions(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+
+        def run_found(
+            cmd: list[str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(stdout="widget--sdd\n")
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch(
+            "sase_github.workspace_plugin.subprocess.run", side_effect=run_found
+        ):
+            found = GitHubWorkspacePlugin().ws_preflight_sdd_companion(
+                str(primary), str(primary), {}
+            )
+        assert found is not None
+        assert found.status == "found"
+
+        def run_unavailable(
+            cmd: list[str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(returncode=1, stderr="authentication required")
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch(
+            "sase_github.workspace_plugin.subprocess.run", side_effect=run_unavailable
+        ):
+            unavailable = GitHubWorkspacePlugin().ws_preflight_sdd_companion(
+                str(primary), str(primary), {}
+            )
+        assert unavailable is not None
+        assert unavailable.status == "unavailable"
+        assert "gh auth login" in unavailable.message
+
+    def test_guarded_materialization_refuses_creation_without_authorization(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        calls: list[list[str]] = []
+
+        def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(returncode=1, stderr="repository not found")
+            raise AssertionError(f"authorization denial must not run: {cmd}")
+
+        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+            with pytest.raises(RuntimeError, match="was not authorized"):
+                GitHubWorkspacePlugin().ws_materialize_sdd_store(
+                    str(primary),
+                    str(primary),
+                    {"sdd_creation_authorized": False},
+                )
+
+        assert not any(cmd[:3] == ["gh", "repo", "create"] for cmd in calls)
+        assert not any(cmd[:3] == ["gh", "label", "create"] for cmd in calls)
+        assert not any(cmd[:2] == ["git", "clone"] for cmd in calls)
+        assert not (primary / ".sase").exists()
+
     def test_companion_sdd_candidates_default_to_project_specific_repo(self) -> None:
         assert _companion_sdd_candidates("acme", "widget") == [
             ("acme", "widget--sdd"),
@@ -725,7 +849,7 @@ class TestSddMaterialization:
             record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
                 str(primary),
                 str(primary),
-                {},
+                {"sdd_creation_authorized": True},
             )
 
         assert record is not None

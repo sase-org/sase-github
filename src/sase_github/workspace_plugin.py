@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from sase.ace.changespec.project_spec_path import preferred_project_spec_path
 from sase.workspace_provider import (
     ResolvedRef,
+    SddCompanionPreflight,
     VcsNamespaceEntry,
     VcsRefNamespaces,
     VcsRepoCandidates,
@@ -261,6 +262,51 @@ class GitHubWorkspacePlugin:
         return record
 
     @hookimpl
+    def ws_preflight_sdd_companion(
+        self,
+        primary_workspace_dir: str,
+        workspace_dir: str,
+        options: dict[str, object],
+    ) -> SddCompanionPreflight | None:
+        """Authoritatively discover the companion without mutating state."""
+        del workspace_dir
+        origin = _read_github_origin(primary_workspace_dir)
+        if origin is None:
+            return None
+
+        exact_target = _sdd_repo_target_from_options(options, default_host=origin.host)
+        if exact_target is not None:
+            host, owner, repo, _remote_url = exact_target
+            repo_full_name = f"{owner}/{repo}"
+            probe, message = _probe_github_repo_detail(host, repo_full_name)
+        else:
+            candidate = _discover_companion_sdd_repo_for_create(
+                origin.host,
+                _companion_sdd_candidates(origin.owner, origin.repo),
+            )
+            if candidate is None:
+                return SddCompanionPreflight(
+                    status="unavailable",
+                    provider="GitHub",
+                    host=origin.host,
+                    repo=f"{origin.owner}/{origin.repo}--sdd",
+                    visibility="public",
+                    message="GitHub companion discovery returned no result",
+                )
+            owner, repo, probe, message = candidate
+            host = origin.host
+            repo_full_name = f"{owner}/{repo}"
+
+        return SddCompanionPreflight(
+            status=probe,
+            provider="GitHub",
+            host=host,
+            repo=repo_full_name,
+            visibility="public",
+            message=message or "",
+        )
+
+    @hookimpl
     def ws_create_sdd_remote(
         self,
         primary_workspace_dir: str,
@@ -287,6 +333,7 @@ class GitHubWorkspacePlugin:
                     created=False,
                 )
             if probe == "not_found":
+                _require_sdd_creation_authorization(options, repo_full_name)
                 created = _create_github_sdd_repo(
                     host,
                     repo_full_name,
@@ -323,6 +370,7 @@ class GitHubWorkspacePlugin:
                 created=False,
             )
         if probe == "not_found":
+            _require_sdd_creation_authorization(options, repo_full_name)
             created = _create_github_sdd_repo(
                 origin.host,
                 repo_full_name,
@@ -778,6 +826,22 @@ def _create_github_sdd_repo(
         raise RuntimeError(message)
 
     return True
+
+
+def _require_sdd_creation_authorization(
+    options: Mapping[str, object],
+    repo_full_name: str,
+) -> None:
+    """Enforce guarded explicit-init authorization when core supplies it."""
+    if "sdd_creation_authorized" not in options:
+        return
+    if options.get("sdd_creation_authorized") is True:
+        return
+    raise RuntimeError(
+        f"creation of GitHub SDD companion repository {repo_full_name} was not "
+        "authorized; rerun `sase sdd init` and answer y/yes to its repository "
+        "creation prompt"
+    )
 
 
 def _ensure_github_sdd_label(host: str, repo_full_name: str) -> None:
