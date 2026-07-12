@@ -741,9 +741,9 @@ def _probe_github_repo_detail(
                 "view",
                 repo_full_name,
                 "--json",
-                "name",
+                "name,isArchived",
                 "-q",
-                ".name",
+                "[.name, .isArchived] | @tsv",
             ],
             capture_output=True,
             text=True,
@@ -770,7 +770,20 @@ def _probe_github_repo_detail(
         )
 
     if result.returncode == 0:
-        return "found", None
+        fields = result.stdout.strip().split("\t")
+        if len(fields) >= 2 and fields[1].casefold() == "true":
+            return (
+                "unavailable",
+                f"{repo_full_name} is archived and read-only; if this project "
+                "migrated to split companions run `sase sdd init`, otherwise "
+                "unarchive the repo",
+            )
+        if fields and fields[0]:
+            return "found", None
+        return (
+            "unavailable",
+            f"could not verify GitHub repository {repo_full_name}: empty response",
+        )
 
     output = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
     normalized = output.casefold()

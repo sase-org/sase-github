@@ -18,6 +18,7 @@ from sase_github.workspace_plugin import (
     _extract_pr_number,
     _github_workspace_dir,
     _list_active_project_records,
+    _probe_github_repo_detail,
     peek_gh_ref,
     resolve_gh_ref,
 )
@@ -691,6 +692,47 @@ class TestSddMaterialization:
         assert unavailable.status == "unavailable"
         assert "gh auth login" in unavailable.message
 
+    def test_archived_probe_is_unavailable_and_surfaces_through_adoption(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        calls: list[list[str]] = []
+
+        def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(stdout="widget--sdd\ttrue\n")
+            raise AssertionError(f"archived repository must not be adopted: {cmd}")
+
+        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+            probe, message = _probe_github_repo_detail(
+                "github.com", "acme/widget--sdd"
+            )
+            preflight = GitHubWorkspacePlugin().ws_preflight_sdd_companion(
+                str(primary), str(primary), {}
+            )
+            with pytest.raises(RuntimeError, match="archived and read-only"):
+                GitHubWorkspacePlugin().ws_create_sdd_remote(
+                    str(primary),
+                    str(primary),
+                    {"create": False},
+                )
+
+        assert probe == "unavailable"
+        assert message is not None
+        assert "sase sdd init" in message
+        assert preflight is not None
+        assert preflight.status == "unavailable"
+        assert preflight.message == message
+        view_calls = [cmd for cmd in calls if cmd[:3] == ["gh", "repo", "view"]]
+        assert view_calls
+        assert all("name,isArchived" in cmd for cmd in view_calls)
+        assert not any(cmd[:3] == ["gh", "label", "create"] for cmd in calls)
+
     def test_guarded_materialization_refuses_creation_without_authorization(
         self,
         tmp_path: Path,
@@ -1082,9 +1124,9 @@ class TestSddMaterialization:
             "view",
             "acme/widget--sdd",
             "--json",
-            "name",
+            "name,isArchived",
             "-q",
-            ".name",
+            "[.name, .isArchived] | @tsv",
         ] in calls
         assert [
             "gh",
