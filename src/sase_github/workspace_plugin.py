@@ -209,7 +209,7 @@ class GitHubWorkspacePlugin:
         workspace_dir: str,
         options: dict[str, object],
     ) -> dict[str, object] | None:
-        """Find or create, label, and stage the GitHub companion repository."""
+        """Find or create, label, and stage a GitHub companion repository."""
         origin = _read_github_origin(primary_workspace_dir)
         if origin is None:
             return None
@@ -268,11 +268,12 @@ class GitHubWorkspacePlugin:
         workspace_dir: str,
         options: dict[str, object],
     ) -> SddCompanionPreflight | None:
-        """Authoritatively discover the companion without mutating state."""
+        """Authoritatively discover a companion without mutating state."""
         del workspace_dir
         origin = _read_github_origin(primary_workspace_dir)
         if origin is None:
             return None
+        suffix = _sdd_companion_suffix(options)
 
         exact_target = _sdd_repo_target_from_options(options, default_host=origin.host)
         if exact_target is not None:
@@ -282,14 +283,14 @@ class GitHubWorkspacePlugin:
         else:
             candidate = _discover_companion_sdd_repo_for_create(
                 origin.host,
-                _companion_sdd_candidates(origin.owner, origin.repo),
+                _companion_sdd_candidates(origin.owner, origin.repo, suffix=suffix),
             )
             if candidate is None:
                 return SddCompanionPreflight(
                     status="unavailable",
                     provider="GitHub",
                     host=origin.host,
-                    repo=f"{origin.owner}/{origin.repo}--sdd",
+                    repo=f"{origin.owner}/{origin.repo}--{suffix}",
                     visibility="public",
                     message="GitHub companion discovery returned no result",
                 )
@@ -313,10 +314,11 @@ class GitHubWorkspacePlugin:
         workspace_dir: str,
         options: dict[str, object],
     ) -> dict[str, object] | None:
-        """Verify or create the GitHub companion SDD repository."""
+        """Verify or create a GitHub companion SDD repository."""
         origin = _read_github_origin(primary_workspace_dir)
         if origin is None:
             return None
+        suffix = _sdd_companion_suffix(options)
 
         exact_target = _sdd_repo_target_from_options(options, default_host=origin.host)
         if exact_target is not None:
@@ -338,6 +340,7 @@ class GitHubWorkspacePlugin:
                     host,
                     repo_full_name,
                     source_repo_full_name=f"{origin.owner}/{origin.repo}",
+                    companion_suffix=suffix,
                 )
                 _ensure_github_sdd_label(host, repo_full_name)
                 return _sdd_store_record(
@@ -353,7 +356,7 @@ class GitHubWorkspacePlugin:
 
         candidate = _discover_companion_sdd_repo_for_create(
             origin.host,
-            _companion_sdd_candidates(origin.owner, origin.repo),
+            _companion_sdd_candidates(origin.owner, origin.repo, suffix=suffix),
         )
         if candidate is None:
             return None
@@ -375,6 +378,7 @@ class GitHubWorkspacePlugin:
                 origin.host,
                 repo_full_name,
                 source_repo_full_name=f"{origin.owner}/{origin.repo}",
+                companion_suffix=suffix,
             )
             _ensure_github_sdd_label(origin.host, repo_full_name)
             return _sdd_store_record(
@@ -615,7 +619,15 @@ def _read_git_origin(cwd: Path) -> str | None:
     return result.stdout.strip() or None
 
 
-def _companion_sdd_candidates(owner: str, repo: str) -> list[tuple[str, str]]:
+def _companion_sdd_candidates(
+    owner: str, repo: str, *, suffix: str = "sdd"
+) -> list[tuple[str, str]]:
+    """Return companion candidates, preserving the legacy ``sdd`` override."""
+
+    suffix = _validate_sdd_companion_suffix(suffix)
+    if suffix != "sdd":
+        return [(owner, f"{repo}--{suffix}")]
+
     from sase_github.config import get_sdd_repo_name_override
 
     override = get_sdd_repo_name_override()
@@ -632,6 +644,20 @@ def _companion_sdd_candidates(owner: str, repo: str) -> list[tuple[str, str]]:
 
 def _companion_sdd_repo(owner: str, repo: str) -> tuple[str, str]:
     return _companion_sdd_candidates(owner, repo)[0]
+
+
+def _sdd_companion_suffix(options: Mapping[str, object]) -> str:
+    raw = options.get("sdd_companion_suffix", options.get("companion_suffix", "sdd"))
+    if not isinstance(raw, str):
+        raise RuntimeError("SDD companion suffix must be a string")
+    return _validate_sdd_companion_suffix(raw)
+
+
+def _validate_sdd_companion_suffix(suffix: str) -> str:
+    normalized = suffix.strip().removeprefix("--")
+    if not normalized or re.fullmatch(r"[a-z0-9][a-z0-9-]*", normalized) is None:
+        raise RuntimeError(f"invalid SDD companion suffix: {suffix!r}")
+    return normalized
 
 
 def _sdd_repo_target_from_options(
@@ -774,6 +800,7 @@ def _create_github_sdd_repo(
     repo_full_name: str,
     *,
     source_repo_full_name: str,
+    companion_suffix: str = "sdd",
 ) -> bool:
     env = _non_interactive_gh_env()
     env["GH_HOST"] = host
@@ -786,7 +813,9 @@ def _create_github_sdd_repo(
                 repo_full_name,
                 "--public",
                 "--description",
-                f"SDD companion repository for {source_repo_full_name}",
+                _sdd_companion_description(
+                    source_repo_full_name, companion_suffix=companion_suffix
+                ),
             ],
             capture_output=True,
             text=True,
@@ -826,6 +855,15 @@ def _create_github_sdd_repo(
         raise RuntimeError(message)
 
     return True
+
+
+def _sdd_companion_description(
+    source_repo_full_name: str, *, companion_suffix: str
+) -> str:
+    suffix = _validate_sdd_companion_suffix(companion_suffix)
+    if suffix == "sdd":
+        return f"SDD companion repository for {source_repo_full_name}"
+    return f"SASE {suffix} companion repository for {source_repo_full_name}"
 
 
 def _require_sdd_creation_authorization(

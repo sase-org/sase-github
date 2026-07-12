@@ -46,9 +46,9 @@ Handles higher-level workflow orchestration. Implements workspace hooks for GitH
 | `ws_generate_submitted_check_script()` | Generates a bash script that checks if a PR is merged via `gh pr view`            |
 | `ws_supports_reviewer_comments()`      | Returns `False` for GitHub URLs (critique comments not supported)                 |
 | `ws_get_workspace_directory()`         | Ensures git clone exists via `ensure_git_clone()`                                 |
-| `ws_preflight_sdd_companion()`         | Read-only authoritative companion discovery for guarded explicit initialization  |
-| `ws_materialize_sdd_store()`           | Finds or creates, labels, and stages the mandatory GitHub SDD companion           |
-| `ws_create_sdd_remote()`               | Verifies or creates the selected companion repository and returns a positive record |
+| `ws_preflight_sdd_companion()`         | Read-only suffix-aware companion discovery for guarded explicit initialization    |
+| `ws_materialize_sdd_store()`           | Finds or creates, labels, and stages a selected GitHub SDD companion              |
+| `ws_create_sdd_remote()`               | Verifies or creates `--sdd`, `--plans`, or `--research` and returns its metadata  |
 | `ws_prepare_mail()`                    | Displays branch/description and prompts user before pushing                       |
 | `ws_format_commit_description()`       | Prepends `[project]` prefix to commit messages                                    |
 | `ws_submit()`                          | Submits a ChangeSpec by merging its PR via `gh pr merge --merge --delete-branch`  |
@@ -108,8 +108,8 @@ When the ref matches an existing ChangeSpec:
 
 ## Ref Namespace Completion
 
-For root ref completion after `#gh:`, `GitHubWorkspacePlugin` implements `ws_list_ref_namespaces()`. It returns
-GitHub owner/org candidates from two local sources only:
+For root ref completion after `#gh:`, `GitHubWorkspacePlugin` implements `ws_list_ref_namespaces()`. It returns GitHub
+owner/org candidates from two local sources only:
 
 - Active SASE project records whose directory keys use the canonical GitHub shape `gh_<owner>__<repo>`
 - The configured `github_orgs` list

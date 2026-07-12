@@ -4,11 +4,11 @@
 
 Use this checklist for GitHub Enterprise Server or another self-hosted GitHub host:
 
-1. **Install SASE and `sase-github`.** Use the
-   [README installation routes](../README.md#installation): the SASE Admin Center Updates tab is the recommended path
-   for an existing managed install, while `uv tool install sase --with sase-github` installs SASE and the
-   plugin together. The core SASE [plugin docs](https://github.com/sase-org/sase/blob/master/docs/plugins.md) also cover
-   `sase plugin install github` for existing installs.
+1. **Install SASE and `sase-github`.** Use the [README installation routes](../README.md#installation): the SASE Admin
+   Center Updates tab is the recommended path for an existing managed install, while
+   `uv tool install sase --with sase-github` installs SASE and the plugin together. The core SASE
+   [plugin docs](https://github.com/sase-org/sase/blob/master/docs/plugins.md) also cover `sase plugin install github`
+   for existing installs.
 2. **Authenticate `gh` to the Enterprise host.**
 
    ```bash
@@ -17,6 +17,7 @@ Use this checklist for GitHub Enterprise Server or another self-hosted GitHub ho
 
    Repo-scoped `gh` commands auto-detect the host from the git remote. The authenticated account must also be able to
    create the mandatory SDD companion when missing and manage its `sase--sdd` label.
+
 3. **Set `github_hosts` in `~/.config/sase/sase.yml`.** **Put your Enterprise host first** if you want bare
    `#gh(owner/repo)` refs to clone from Enterprise. `github.com` is always included implicitly, but the first configured
    host is the default for bare refs; listing `github.com` first means bare refs default there instead. See
@@ -51,8 +52,8 @@ github_hosts:
 **Effect:** sase-github claims repositories whose remote origin host matches one of these hosts. `github.com` is always
 included implicitly, so public GitHub keeps working even if you only configure an Enterprise host.
 
-The first configured host is the default for bare `#gh(owner/repo)` refs. With the example above,
-`#gh(my-org/my-repo)` clones from `github.mycompany.com`. If `github_hosts` is unset, the default host is `github.com`.
+The first configured host is the default for bare `#gh(owner/repo)` refs. With the example above, `#gh(my-org/my-repo)`
+clones from `github.mycompany.com`. If `github_hosts` is unset, the default host is `github.com`.
 
 Host entries are normalized, so pasted values such as `https://github.mycompany.com/` are accepted.
 
@@ -68,8 +69,7 @@ github_orgs:
 ```
 
 **Effect:** When cloning a repo whose owner is in this list, sase-github uses SSH
-(`git@<github-host>:user/project.git`). For all other repos, it uses HTTPS
-(`https://<github-host>/user/project.git`).
+(`git@<github-host>:user/project.git`). For all other repos, it uses HTTPS (`https://<github-host>/user/project.git`).
 
 This matters because SSH URLs require an SSH key configured with GitHub, while HTTPS URLs work for public repos without
 authentication (but require a token for push access).
@@ -98,24 +98,22 @@ Currently the default config defines:
 
 ## SDD companion repository
 
-GitHub provider policy requires a companion repository for every project. The default is `<owner>/<repo>--sdd`; an
-explicit SASE `sdd.repo.name` value may select `name` or `owner/name`. New companions are public by default, while an
-existing private companion remains private. `#gh` setup and `sase sdd init` fail closed if discovery, creation,
-labeling, cloning, core import, or the initial push fails. Fix `gh auth status`, repository permissions, network access,
-or legacy artifact conflicts and retry; SASE does not switch GitHub projects to a local store.
+Managed projects use public `<owner>/<repo>--plans` and `<owner>/<repo>--research` companions. The legacy
+`<owner>/<repo>--sdd` candidate and the `sdd.repo.name` override remain supported for unmigrated stores. `sase sdd init`
+fails closed if discovery, creation, labeling, cloning, or the initial push fails. Fix `gh auth status`, repository
+permissions, or network access and retry; SASE does not switch GitHub projects to a local store.
 
-For explicit `sase sdd init`, authoritative read-only discovery precedes materialization. If the companion is missing,
-only `y` or `yes` at the default-no prompt naming its visibility, full name, and host grants creation authorization for
-that invocation. Non-interactive stdin and bare `sase init --yes` cannot grant it. A companion found during preflight
-receives no creation authorization, so if it disappears before materialization the provider stops instead of silently
-recreating it. `#gh` setup and other non-explicit materialization paths retain provider-owned creation behavior.
+For explicit `sase sdd init`, authoritative read-only discovery precedes materialization. Each missing split companion
+requires its own `y` or `yes` response at a default-no prompt naming visibility, full name, and host. Non-interactive
+stdin and bare `sase init --yes` cannot grant it. A companion found during preflight receives no creation authorization,
+so if it disappears before materialization the provider stops instead of silently recreating it.
 
 ## Workspace Layout
 
 Primary GitHub workspaces are stored under `~/projects/github/<user>/<project>/` when first resolved from a
 `#gh(user/project)` reference and the default host is `github.com`. For other default hosts, workspaces are namespaced
-by host at `~/projects/github/<host>/<user>/<project>/` to avoid collisions between same-named repos on different
-GitHub installations.
+by host at `~/projects/github/<host>/<user>/<project>/` to avoid collisions between same-named repos on different GitHub
+installations.
 
 Numbered parallel-work checkouts follow SASE's shared `workspace.root` policy: by default they live under the platform
 state-root namespace, while explicit `workspace.root: adjacent` keeps the legacy

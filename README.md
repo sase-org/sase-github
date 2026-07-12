@@ -24,8 +24,9 @@ to the **Updates** tab (`5`, or `[` / `]`). Highlight `sase-github` in the plugi
 press `i` to install, and confirm the preview modal. The preview shows the exact `uv` command and resolved package set;
 the install runs as a tracked background task and is discovered on the next `sase` run.
 
-See the core SASE docs for the [Updates tab](https://github.com/sase-org/sase/blob/master/docs/configuration.md#updates-tab)
-and [`sase plugin` commands](https://github.com/sase-org/sase/blob/master/docs/plugins.md).
+See the core SASE docs for the
+[Updates tab](https://github.com/sase-org/sase/blob/master/docs/configuration.md#updates-tab) and
+[`sase plugin` commands](https://github.com/sase-org/sase/blob/master/docs/plugins.md).
 
 ### Alternative: install SASE and the plugin together
 
@@ -94,24 +95,23 @@ itself with sase core:
 
 When sase detects a repository whose remote origin host is in the configured GitHub host set, it automatically loads
 `GitHubPlugin` and `GitHubWorkspacePlugin` to handle VCS operations and provider-owned SDD storage. The first `#gh` or
-`sase sdd init` setup finds or creates `<owner>/<repo>--sdd`, applies the `sase--sdd` label, and stages its clone for
-transactional adoption by SASE core. Authentication, permission, network, repository creation, label, clone, import,
-or initial-push failures stop setup; there is no GitHub-local SDD fallback.
+For managed projects, `sase sdd init` finds or creates the public `<owner>/<repo>--plans` and `<owner>/<repo>--research`
+companions and returns their provider metadata to SASE core. The same hooks retain `<owner>/<repo>--sdd` discovery for
+legacy stores. Authentication, permission, network, repository creation, labeling, clone, or initial-push failures stop
+setup; there is no GitHub-local SDD fallback.
 
-The explicit `sase sdd init` flow first uses a read-only `gh repo view` preflight. Existing companions connect without
-a creation prompt. A missing companion requires a fresh, default-no interactive `y`/`yes` response to `Create public
-GitHub SDD companion repository <owner>/<repo>--sdd on <host>? [y/N]`. Non-interactive stdin, EOF, interruption, and
-bare `sase init --yes` cannot authorize creation. Other provider-owned materialization consumers, including `#gh`
-setup, retain their existing behavior.
+The explicit `sase sdd init` flow first uses a read-only `gh repo view` preflight for each companion. Existing
+companions connect without a creation prompt. Each missing companion requires a fresh, default-no interactive `y`/`yes`
+response naming the full `--plans` or `--research` repository. Non-interactive stdin, EOF, interruption, and bare
+`sase init --yes` cannot authorize creation.
 
 ## Requirements
 
 - Python 3.12+
 - [sase](https://github.com/sase-org/sase) >= 0.11.0
-- [gh](https://cli.github.com/) CLI (for GitHub API operations, mandatory companion repository setup, and
-  `#gh:<owner>/` repository completion). Run `gh auth login`; the account must be able to create the companion when it
-  is missing and manage its labels. For GitHub Enterprise, run `gh auth login --hostname <host>` for each configured
-  Enterprise host.
+- [gh](https://cli.github.com/) CLI (for GitHub API operations, mandatory companion repository setup, and `#gh:<owner>/`
+  repository completion). Run `gh auth login`; the account must be able to create the companion when it is missing and
+  manage its labels. For GitHub Enterprise, run `gh auth login --hostname <host>` for each configured Enterprise host.
 
 See [Configuration](docs/configuration.md) for `github_hosts`, `github_orgs`, workspace layout, and the ordered GitHub
 Enterprise setup flow.

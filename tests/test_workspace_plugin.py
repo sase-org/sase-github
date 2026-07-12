@@ -725,6 +725,16 @@ class TestSddMaterialization:
             ("acme", "widget--sdd"),
         ]
 
+    @pytest.mark.parametrize("suffix", ["plans", "research"])
+    def test_companion_sdd_candidates_support_split_suffixes(self, suffix: str) -> None:
+        with patch(
+            "sase_github.config.load_merged_config",
+            return_value={"sdd": {"repo": {"name": "ignored-for-split"}}},
+        ):
+            assert _companion_sdd_candidates("acme", "widget", suffix=suffix) == [
+                ("acme", f"widget--{suffix}")
+            ]
+
     def test_companion_sdd_candidates_respect_repo_name_override(self) -> None:
         with patch(
             "sase_github.config.load_merged_config",
@@ -1087,6 +1097,46 @@ class TestSddMaterialization:
         ] in calls
         assert _sdd_label_create_cmd("acme/widget--sdd") in calls
         assert all("--private" not in cmd for cmd in calls)
+
+    @pytest.mark.parametrize("suffix", ["plans", "research"])
+    def test_create_sdd_remote_creates_public_split_companion(
+        self, tmp_path: Path, suffix: str
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        calls: list[list[str]] = []
+
+        def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(returncode=1, stderr="repository not found")
+            if cmd[:3] in (["gh", "repo", "create"], ["gh", "label", "create"]):
+                return _completed()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_create_sdd_remote(
+                str(primary),
+                str(primary),
+                {"create": True, "sdd_companion_suffix": suffix},
+            )
+
+        repo = f"acme/widget--{suffix}"
+        assert record is not None
+        assert record["repo"] == repo
+        assert record["created"] is True
+        assert [
+            "gh",
+            "repo",
+            "create",
+            repo,
+            "--public",
+            "--description",
+            f"SASE {suffix} companion repository for acme/widget",
+        ] in calls
+        assert _sdd_label_create_cmd(repo) in calls
 
     def test_create_sdd_remote_adopts_repo_when_create_reports_existing(
         self, tmp_path: Path
