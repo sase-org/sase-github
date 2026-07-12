@@ -1246,6 +1246,11 @@ class TestSddMaterialization:
         [
             ("authentication required; run gh auth login", "gh auth login"),
             ("lookup api.github.com: no such host", "could not reach github.com"),
+            (
+                "HTTP 403: Resource not accessible by personal access token "
+                "(https://api.github.com/repos/acme/widget--sdd)",
+                "could not verify GitHub repository",
+            ),
         ],
     )
     def test_create_sdd_remote_raises_actionable_probe_errors(
@@ -1288,11 +1293,13 @@ class TestSddMaterialization:
             ("auth", "gh auth login"),
             ("network", "could not reach github.com"),
             ("permission", "label-management permissions"),
+            ("forbidden_pat", "label-management permissions"),
         ],
     )
-    def test_create_sdd_remote_raises_actionable_label_errors(
+    def test_create_sdd_remote_warns_on_label_failures(
         self,
         tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
         label_failure: str,
         expected: str,
     ) -> None:
@@ -1319,6 +1326,15 @@ class TestSddMaterialization:
                         returncode=1,
                         stderr="lookup api.github.com: no such host",
                     )
+                if label_failure == "forbidden_pat":
+                    return _completed(
+                        returncode=1,
+                        stderr=(
+                            "HTTP 403: Resource not accessible by personal "
+                            "access token (https://api.github.com/repos/"
+                            "acme/widget--sdd/labels)"
+                        ),
+                    )
                 return _completed(
                     returncode=1,
                     stderr="Resource not accessible by integration",
@@ -1326,12 +1342,20 @@ class TestSddMaterialization:
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
-            with pytest.raises(RuntimeError, match=expected):
-                GitHubWorkspacePlugin().ws_create_sdd_remote(
-                    str(primary),
-                    str(primary),
-                    {"create": True},
-                )
+            record = GitHubWorkspacePlugin().ws_create_sdd_remote(
+                str(primary),
+                str(primary),
+                {"create": True},
+            )
+
+        assert record is not None
+        assert record["repo"] == "acme/widget--sdd"
+        assert record["discovery"] == "found"
+        err = capsys.readouterr().err
+        assert "warning:" in err
+        assert expected in err
+        if label_failure == "forbidden_pat":
+            assert "gh auth login" not in err
 
     def test_create_sdd_remote_raises_when_gh_is_missing(
         self,

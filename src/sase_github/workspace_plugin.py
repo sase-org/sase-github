@@ -883,6 +883,19 @@ def _require_sdd_creation_authorization(
 
 
 def _ensure_github_sdd_label(host: str, repo_full_name: str) -> None:
+    """Best-effort creation of the companion marker label.
+
+    The label is informational repository metadata; tokens without
+    label-management rights must still be able to complete companion
+    init, so failures surface as warnings instead of aborting.
+    """
+    try:
+        _create_github_sdd_label(host, repo_full_name)
+    except RuntimeError as exc:
+        print(f"warning: {exc}", file=sys.stderr)
+
+
+def _create_github_sdd_label(host: str, repo_full_name: str) -> None:
     env = _non_interactive_gh_env()
     env["GH_HOST"] = host
     try:
@@ -1222,6 +1235,9 @@ def _classify_gh_repo_list_error(
 
 
 def _looks_like_auth_error(text: str) -> bool:
+    # HTTP 403 is deliberately absent: gh reports it for valid tokens
+    # that lack permission (e.g. fine-grained PATs), where `gh auth
+    # login` is the wrong remedy.
     markers = (
         "auth login",
         "authentication required",
@@ -1229,9 +1245,7 @@ def _looks_like_auth_error(text: str) -> bool:
         "requires authentication",
         "bad credentials",
         "http 401",
-        "http 403",
         "status code 401",
-        "status code 403",
     )
     return any(marker in text for marker in markers)
 
