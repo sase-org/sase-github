@@ -1344,7 +1344,7 @@ def _list_project_records(projects_base: Path) -> list[ProjectRecordWire]:
     )
 
 
-def _list_active_project_records(projects_base: Path) -> list[ProjectRecordWire]:
+def _list_enabled_project_records(projects_base: Path) -> list[ProjectRecordWire]:
     if not projects_base.is_dir():
         return []
 
@@ -1352,7 +1352,7 @@ def _list_active_project_records(projects_base: Path) -> list[ProjectRecordWire]
 
     return list_project_records(
         projects_base,
-        ["active"],
+        ["enabled"],
         include_home=False,
     )
 
@@ -1369,7 +1369,7 @@ def _canonical_project_owner(project_name: str) -> str | None:
 
 def _pluralize_project_count(count: int) -> str:
     noun = "project" if count == 1 else "projects"
-    return f"{count} active {noun}"
+    return f"{count} enabled {noun}"
 
 
 def _list_github_ref_namespaces() -> VcsRefNamespaces:
@@ -1377,7 +1377,7 @@ def _list_github_ref_namespaces() -> VcsRefNamespaces:
 
     owner_counts: dict[str, int] = {}
     owner_names: dict[str, str] = {}
-    for record in _list_active_project_records(_projects_base()):
+    for record in _list_enabled_project_records(_projects_base()):
         owner = _canonical_project_owner(record.project_name)
         if owner is None:
             continue

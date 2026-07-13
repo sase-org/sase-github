@@ -17,7 +17,7 @@ from sase_github.workspace_plugin import (
     _companion_sdd_candidates,
     _extract_pr_number,
     _github_workspace_dir,
-    _list_active_project_records,
+    _list_enabled_project_records,
     _probe_github_repo_detail,
     peek_gh_ref,
     resolve_gh_ref,
@@ -515,7 +515,7 @@ class TestRefNamespaceCompletion:
 
         with (
             patch(
-                "sase_github.workspace_plugin._list_active_project_records",
+                "sase_github.workspace_plugin._list_enabled_project_records",
                 return_value=records,
             ),
             patch("sase_github.config.get_github_orgs", return_value=[]),
@@ -527,8 +527,8 @@ class TestRefNamespaceCompletion:
             (entry.name, entry.description, entry.kind_label)
             for entry in result.entries
         ] == [
-            ("bbugyi200", "1 active project", "org"),
-            ("sase-org", "2 active projects", "org"),
+            ("bbugyi200", "1 enabled project", "org"),
+            ("sase-org", "2 enabled projects", "org"),
         ]
 
     def test_unions_config_orgs_with_case_insensitive_dedupe(self) -> None:
@@ -536,7 +536,7 @@ class TestRefNamespaceCompletion:
 
         with (
             patch(
-                "sase_github.workspace_plugin._list_active_project_records",
+                "sase_github.workspace_plugin._list_enabled_project_records",
                 return_value=records,
             ),
             patch(
@@ -549,10 +549,10 @@ class TestRefNamespaceCompletion:
         assert result is not None
         assert [(entry.name, entry.description) for entry in result.entries] == [
             ("bbugyi200", "from github_orgs"),
-            ("sase-org", "1 active project"),
+            ("sase-org", "1 enabled project"),
         ]
 
-    def test_active_records_helper_filters_to_active_lifecycle(
+    def test_enabled_records_helper_filters_to_enabled_lifecycle(
         self, tmp_path: Path
     ) -> None:
         projects_base = tmp_path / "projects"
@@ -562,11 +562,11 @@ class TestRefNamespaceCompletion:
             "sase.core.project_lifecycle_facade.list_project_records",
             return_value=[],
         ) as list_records:
-            assert _list_active_project_records(projects_base) == []
+            assert _list_enabled_project_records(projects_base) == []
 
         list_records.assert_called_once_with(
             projects_base,
-            ["active"],
+            ["enabled"],
             include_home=False,
         )
 
@@ -575,7 +575,7 @@ class TestRefNamespaceCompletion:
 
         with (
             patch(
-                "sase_github.workspace_plugin._list_active_project_records",
+                "sase_github.workspace_plugin._list_enabled_project_records",
                 return_value=records,
             ),
             patch("sase_github.config.get_github_orgs", return_value=["bbugyi200"]),
@@ -1541,6 +1541,33 @@ class TestSddMaterialization:
 
 
 class TestResolveGhRef:
+    def test_repo_path_refuses_nonexistent_repository_without_creating_project(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            path_patch, env_patch = _home_patches(home)
+            clone_failure = subprocess.CalledProcessError(
+                128,
+                ["git", "clone"],
+                stderr="repository not found",
+            )
+            with (
+                path_patch,
+                env_patch,
+                patch(
+                    "sase_github.workspace_plugin.subprocess.run",
+                    side_effect=[clone_failure, clone_failure],
+                ),
+                pytest.raises(RuntimeError, match="git clone failed for acme/missing"),
+            ):
+                resolve_gh_ref("acme/missing")
+
+            project_dir = (
+                home / ".sase" / "projects" / "gh_acme__missing"
+            )
+            assert not project_dir.exists()
+
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
