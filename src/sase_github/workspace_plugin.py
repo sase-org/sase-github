@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from sase.ace.changespec.project_spec_path import preferred_project_spec_path
 from sase.workspace_provider import (
+    ExternalRepoCloneResult,
     ResolvedRef,
     SddSidecarPreflight,
     VcsNamespaceEntry,
@@ -72,6 +73,7 @@ class GitHubWorkspacePlugin:
             vcs_family="git",
             vcs_provider_name="github",
             sdd_storage_policy="separate_repo",
+            external_repo_schemes=("gh",),
         )
 
     @hookimpl
@@ -124,6 +126,31 @@ class GitHubWorkspacePlugin:
             primary_workspace_dir=r.primary_workspace_dir,
             checkout_target=r.checkout_target,
             canonical_ref=r.canonical_ref,
+        )
+
+    @hookimpl
+    def ws_clone_external_repo(
+        self,
+        scheme: str,
+        ref: str,
+        dest_dir: str,
+    ) -> ExternalRepoCloneResult | None:
+        """Clone a workspace-local GitHub repo for the ``gh`` scheme."""
+
+        if scheme != "gh":
+            return None
+        parts = ref.split("/")
+        if len(parts) != 2 or any(not part for part in parts):
+            raise RuntimeError(
+                f"Invalid GitHub external repo ref {ref!r}; expected owner/repo"
+            )
+        owner, repo = parts
+        _clone_gh_repo(owner, repo, dest_dir)
+        default_branch = get_default_branch(dest_dir).removeprefix("origin/")
+        return ExternalRepoCloneResult(
+            canonical_name=f"gh:{owner}/{repo}",
+            dest_dir=dest_dir,
+            default_branch=default_branch,
         )
 
     @hookimpl
@@ -870,9 +897,7 @@ def _create_github_sdd_repo(
     return True
 
 
-def _sdd_sidecar_description(
-    source_repo_full_name: str, *, sidecar_suffix: str
-) -> str:
+def _sdd_sidecar_description(source_repo_full_name: str, *, sidecar_suffix: str) -> str:
     suffix = _validate_sdd_sidecar_suffix(sidecar_suffix)
     if suffix == "sdd":
         return f"SDD sidecar repository for {source_repo_full_name}"
@@ -1066,7 +1091,10 @@ def _clone_gh_repo(
     from sase_github.config import get_default_github_host
 
     github_host = host or get_default_github_host()
-    parent = os.path.dirname(target_dir.rstrip("/"))
+    target = Path(target_dir.rstrip("/"))
+    if os.path.lexists(target):
+        raise RuntimeError(f"git clone destination already exists: {target}")
+    parent = os.path.dirname(str(target))
     os.makedirs(parent, exist_ok=True)
 
     attempts = (
@@ -1078,7 +1106,7 @@ def _clone_gh_repo(
     for label, url in attempts:
         try:
             subprocess.run(
-                ["git", "clone", url, target_dir.rstrip("/")],
+                ["git", "clone", url, str(target)],
                 capture_output=True,
                 text=True,
                 check=True,
@@ -1090,14 +1118,29 @@ def _clone_gh_repo(
             if first_error is None:
                 first_error = e
             failures.append(_format_clone_failure(label, url, e))
+            _remove_failed_clone_target(target)
         except FileNotFoundError as e:
+            _remove_failed_clone_target(target)
             raise RuntimeError("git clone failed: git command not found") from e
 
     detail = "\n".join(failures)
     error_msg = f"git clone failed for {user}/{project}"
     if detail:
         error_msg += f":\n{detail}"
+    error_msg += "\nIf authentication failed, run 'gh auth login' and retry."
     raise RuntimeError(error_msg) from first_error
+
+
+def _remove_failed_clone_target(target: Path) -> None:
+    """Remove only the clone target created by a failed attempt."""
+
+    if target.is_dir() and not target.is_symlink():
+        shutil.rmtree(target, ignore_errors=True)
+        return
+    try:
+        target.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _github_ssh_url(host: str, user: str, project: str) -> str:

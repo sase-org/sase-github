@@ -9,7 +9,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sase.workspace_provider import ResolvedRef, SUBMITTED_CHECK_EXIT_CODE_CLOSED
+from sase.workspace_provider import (
+    ExternalRepoCloneResult,
+    ResolvedRef,
+    SUBMITTED_CHECK_EXIT_CODE_CLOSED,
+)
 
 from sase_github.workspace_plugin import (
     GitHubWorkspacePlugin,
@@ -162,6 +166,37 @@ def test_submitted_check_closed_literal_matches_sase_contract() -> None:
     assert f"(exit {SUBMITTED_CHECK_EXIT_CODE_CLOSED})" in script
 
 
+def test_workspace_metadata_advertises_external_gh_scheme() -> None:
+    metadata = GitHubWorkspacePlugin().ws_get_workflow_metadata()
+
+    assert metadata is not None
+    assert metadata.external_repo_schemes == ("gh",)
+
+
+def test_external_repo_hook_clones_and_reports_canonical_result(
+    tmp_path: Path,
+) -> None:
+    dest = tmp_path / "widget"
+    plugin = GitHubWorkspacePlugin()
+
+    assert plugin.ws_clone_external_repo("gl", "acme/widget", str(dest)) is None
+    with (
+        patch("sase_github.workspace_plugin._clone_gh_repo") as clone,
+        patch(
+            "sase_github.workspace_plugin.get_default_branch",
+            return_value="origin/trunk",
+        ),
+    ):
+        result = plugin.ws_clone_external_repo("gh", "acme/widget", str(dest))
+
+    assert result == ExternalRepoCloneResult(
+        canonical_name="gh:acme/widget",
+        dest_dir=str(dest),
+        default_branch="trunk",
+    )
+    clone.assert_called_once_with("acme", "widget", str(dest))
+
+
 class TestHostAwareWorkspace:
     def test_github_com_workspace_path_is_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -261,6 +296,37 @@ class TestHostAwareWorkspace:
             target,
         ]
 
+    def test_clone_removes_partial_ssh_target_before_https_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / "repo"
+            calls = 0
+
+            def clone_attempt(
+                command: list[str], **_kwargs: object
+            ) -> subprocess.CompletedProcess[str]:
+                nonlocal calls
+                calls += 1
+                clone_target = Path(command[-1])
+                clone_target.mkdir()
+                if calls == 1:
+                    (clone_target / "partial").write_text("ssh", encoding="utf-8")
+                    raise subprocess.CalledProcessError(
+                        128,
+                        command,
+                        stderr="ssh denied",
+                    )
+                assert not (clone_target / "partial").exists()
+                return _completed(args=command)
+
+            with patch(
+                "sase_github.workspace_plugin.subprocess.run",
+                side_effect=clone_attempt,
+            ):
+                remote = _clone_gh_repo("alice", "repo", str(target))
+
+        assert calls == 2
+        assert remote == "https://github.com/alice/repo.git"
+
     def test_clone_both_fail_error_includes_both_attempts(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             target = str(Path(d) / "repo")
@@ -291,6 +357,34 @@ class TestHostAwareWorkspace:
         assert "ssh denied" in message
         assert "HTTPS clone" in message
         assert "https denied" in message
+        assert "gh auth login" in message
+
+    def test_clone_failure_removes_final_partial_target(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / "repo"
+
+            def fail_with_partial(
+                command: list[str], **_kwargs: object
+            ) -> subprocess.CompletedProcess[str]:
+                clone_target = Path(command[-1])
+                clone_target.mkdir()
+                (clone_target / "partial").write_text("nope", encoding="utf-8")
+                raise subprocess.CalledProcessError(
+                    128,
+                    command,
+                    stderr="denied",
+                )
+
+            with (
+                patch(
+                    "sase_github.workspace_plugin.subprocess.run",
+                    side_effect=fail_with_partial,
+                ),
+                pytest.raises(RuntimeError),
+            ):
+                _clone_gh_repo("alice", "repo", str(target))
+
+            assert not target.exists()
 
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
@@ -709,9 +803,7 @@ class TestSddMaterialization:
             raise AssertionError(f"archived repository must not be adopted: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
-            probe, message = _probe_github_repo_detail(
-                "github.com", "acme/widget--sdd"
-            )
+            probe, message = _probe_github_repo_detail("github.com", "acme/widget--sdd")
             preflight = GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
                 str(primary), str(primary), {}
             )
@@ -1563,9 +1655,7 @@ class TestResolveGhRef:
             ):
                 resolve_gh_ref("acme/missing")
 
-            project_dir = (
-                home / ".sase" / "projects" / "gh_acme__missing"
-            )
+            project_dir = home / ".sase" / "projects" / "gh_acme__missing"
             assert not project_dir.exists()
 
     @patch(
