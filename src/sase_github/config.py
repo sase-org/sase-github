@@ -137,7 +137,7 @@ def get_default_github_host() -> str:
 
 
 def get_sdd_repo_name_override() -> str | None:
-    """Return the optional ``sdd.repo.name`` companion-repo override."""
+    """Return the optional ``sdd.repo.name`` sidecar-repo override."""
     config = load_merged_config()
     raw_sdd = config.get("sdd", {}) if isinstance(config, dict) else {}
     sdd = raw_sdd if isinstance(raw_sdd, dict) else {}

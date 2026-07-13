@@ -46,22 +46,22 @@ Handles higher-level workflow orchestration. Implements workspace hooks for GitH
 | `ws_generate_submitted_check_script()` | Generates a bash script that checks if a PR is merged via `gh pr view`            |
 | `ws_supports_reviewer_comments()`      | Returns `False` for GitHub URLs (critique comments not supported)                 |
 | `ws_get_workspace_directory()`         | Ensures git clone exists via `ensure_git_clone()`                                 |
-| `ws_preflight_sdd_companion()`         | Read-only suffix-aware companion discovery for guarded explicit initialization    |
-| `ws_materialize_sdd_store()`           | Finds or creates, labels, and stages a selected GitHub SDD companion              |
+| `ws_preflight_sdd_sidecar()`         | Read-only suffix-aware sidecar discovery for guarded explicit initialization    |
+| `ws_materialize_sdd_store()`           | Finds or creates, labels, and stages a selected GitHub SDD sidecar              |
 | `ws_create_sdd_remote()`               | Verifies or creates `--sdd`, `--plans`, or `--research` and returns its metadata  |
 | `ws_prepare_mail()`                    | Displays branch/description and prompts user before pushing                       |
 | `ws_format_commit_description()`       | Prepends `[project]` prefix to commit messages                                    |
 | `ws_submit()`                          | Submits a ChangeSpec by merging its PR via `gh pr merge --merge --delete-branch`  |
 
 The provider declares `separate_repo` SDD policy. Core supplies a unique staging path; the plugin finds or creates the
-selected companion, ensures its `sase--sdd` label, and clones with the normal SSH/HTTPS fallback. It returns only a
+selected sidecar, ensures its `sase--sdd` label, and clones with the normal SSH/HTTPS fallback. It returns only a
 positive materialized record. SASE core owns legacy-artifact conflict checks, import, initial commit/push, atomic
 adoption, and the durable primary-workspace record.
 
-The explicit initializer calls `ws_preflight_sdd_companion()` before materialization. This hook may run `gh repo view`
+The explicit initializer calls `ws_preflight_sdd_sidecar()` before materialization. This hook may run `gh repo view`
 but never creates or labels a repository, clones, or writes local state. Core then includes a per-invocation creation
 authorization in materialization options: `False` after a found result and `True` only after the user answers `y` or
-`yes` for a missing public companion. The provider checks this option immediately before both repository-creation
+`yes` for a missing public sidecar. The provider checks this option immediately before both repository-creation
 branches. Other materialization callers omit the option and retain provider-owned behavior.
 
 ## Reference Resolution

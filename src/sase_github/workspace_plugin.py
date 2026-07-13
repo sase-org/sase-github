@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from sase.ace.changespec.project_spec_path import preferred_project_spec_path
 from sase.workspace_provider import (
     ResolvedRef,
-    SddCompanionPreflight,
+    SddSidecarPreflight,
     VcsNamespaceEntry,
     VcsRefNamespaces,
     VcsRepoCandidates,
@@ -43,9 +43,9 @@ _PR_URL_RE = re.compile(r"https?://[^/]+/.+?/pull/(\d+)")
 _HOSTED_URL_RE = re.compile(r"https?://[^/]+/")
 _GH_REPO_LIST_TIMEOUT_SECONDS = 10
 _SDD_STORE_SCHEMA_VERSION = 1
-_SDD_COMPANION_LABEL = "sase--sdd"
-_SDD_COMPANION_LABEL_DESCRIPTION = "SASE SDD companion repository"
-_SDD_COMPANION_LABEL_COLOR = "0e8a16"
+_SDD_SIDECAR_LABEL = "sase--sdd"
+_SDD_SIDECAR_LABEL_DESCRIPTION = "SASE SDD sidecar repository"
+_SDD_SIDECAR_LABEL_COLOR = "0e8a16"
 _DEFAULT_REPO_COMPLETION_LIMIT = 200
 _VcsRepoErrorKind = Literal[
     "auth",
@@ -209,7 +209,7 @@ class GitHubWorkspacePlugin:
         workspace_dir: str,
         options: dict[str, object],
     ) -> dict[str, object] | None:
-        """Find or create, label, and stage a GitHub companion repository."""
+        """Find or create, label, and stage a GitHub sidecar repository."""
         origin = _read_github_origin(primary_workspace_dir)
         if origin is None:
             return None
@@ -225,7 +225,7 @@ class GitHubWorkspacePlugin:
             return None
         if record.get("discovery") == "not_found":
             raise RuntimeError(
-                "GitHub provider did not create the mandatory companion SDD repository"
+                "GitHub provider did not create the mandatory sidecar SDD repository"
             )
 
         repo_full_name = str(record.get("repo") or "")
@@ -262,18 +262,18 @@ class GitHubWorkspacePlugin:
         return record
 
     @hookimpl
-    def ws_preflight_sdd_companion(
+    def ws_preflight_sdd_sidecar(
         self,
         primary_workspace_dir: str,
         workspace_dir: str,
         options: dict[str, object],
-    ) -> SddCompanionPreflight | None:
-        """Authoritatively discover a companion without mutating state."""
+    ) -> SddSidecarPreflight | None:
+        """Authoritatively discover a sidecar without mutating state."""
         del workspace_dir
         origin = _read_github_origin(primary_workspace_dir)
         if origin is None:
             return None
-        suffix = _sdd_companion_suffix(options)
+        suffix = _sdd_sidecar_suffix(options)
 
         exact_target = _sdd_repo_target_from_options(options, default_host=origin.host)
         if exact_target is not None:
@@ -281,24 +281,24 @@ class GitHubWorkspacePlugin:
             repo_full_name = f"{owner}/{repo}"
             probe, message = _probe_github_repo_detail(host, repo_full_name)
         else:
-            candidate = _discover_companion_sdd_repo_for_create(
+            candidate = _discover_sidecar_sdd_repo_for_create(
                 origin.host,
-                _companion_sdd_candidates(origin.owner, origin.repo, suffix=suffix),
+                _sidecar_sdd_candidates(origin.owner, origin.repo, suffix=suffix),
             )
             if candidate is None:
-                return SddCompanionPreflight(
+                return SddSidecarPreflight(
                     status="unavailable",
                     provider="GitHub",
                     host=origin.host,
                     repo=f"{origin.owner}/{origin.repo}--{suffix}",
                     visibility="public",
-                    message="GitHub companion discovery returned no result",
+                    message="GitHub sidecar discovery returned no result",
                 )
             owner, repo, probe, message = candidate
             host = origin.host
             repo_full_name = f"{owner}/{repo}"
 
-        return SddCompanionPreflight(
+        return SddSidecarPreflight(
             status=probe,
             provider="GitHub",
             host=host,
@@ -314,11 +314,11 @@ class GitHubWorkspacePlugin:
         workspace_dir: str,
         options: dict[str, object],
     ) -> dict[str, object] | None:
-        """Verify or create a GitHub companion SDD repository."""
+        """Verify or create a GitHub sidecar SDD repository."""
         origin = _read_github_origin(primary_workspace_dir)
         if origin is None:
             return None
-        suffix = _sdd_companion_suffix(options)
+        suffix = _sdd_sidecar_suffix(options)
 
         exact_target = _sdd_repo_target_from_options(options, default_host=origin.host)
         if exact_target is not None:
@@ -340,7 +340,7 @@ class GitHubWorkspacePlugin:
                     host,
                     repo_full_name,
                     source_repo_full_name=f"{origin.owner}/{origin.repo}",
-                    companion_suffix=suffix,
+                    sidecar_suffix=suffix,
                 )
                 _ensure_github_sdd_label(host, repo_full_name)
                 return _sdd_store_record(
@@ -354,9 +354,9 @@ class GitHubWorkspacePlugin:
                 raise RuntimeError(unavailable_message)
             return None
 
-        candidate = _discover_companion_sdd_repo_for_create(
+        candidate = _discover_sidecar_sdd_repo_for_create(
             origin.host,
-            _companion_sdd_candidates(origin.owner, origin.repo, suffix=suffix),
+            _sidecar_sdd_candidates(origin.owner, origin.repo, suffix=suffix),
         )
         if candidate is None:
             return None
@@ -378,7 +378,7 @@ class GitHubWorkspacePlugin:
                 origin.host,
                 repo_full_name,
                 source_repo_full_name=f"{origin.owner}/{origin.repo}",
-                companion_suffix=suffix,
+                sidecar_suffix=suffix,
             )
             _ensure_github_sdd_label(origin.host, repo_full_name)
             return _sdd_store_record(
@@ -619,12 +619,12 @@ def _read_git_origin(cwd: Path) -> str | None:
     return result.stdout.strip() or None
 
 
-def _companion_sdd_candidates(
+def _sidecar_sdd_candidates(
     owner: str, repo: str, *, suffix: str = "sdd"
 ) -> list[tuple[str, str]]:
-    """Return companion candidates, preserving the legacy ``sdd`` override."""
+    """Return sidecar candidates, preserving the legacy ``sdd`` override."""
 
-    suffix = _validate_sdd_companion_suffix(suffix)
+    suffix = _validate_sdd_sidecar_suffix(suffix)
     if suffix != "sdd":
         return [(owner, f"{repo}--{suffix}")]
 
@@ -642,21 +642,21 @@ def _companion_sdd_candidates(
     raise ValueError("sdd.repo.name must be a repo name or owner/repo")
 
 
-def _companion_sdd_repo(owner: str, repo: str) -> tuple[str, str]:
-    return _companion_sdd_candidates(owner, repo)[0]
+def _sidecar_sdd_repo(owner: str, repo: str) -> tuple[str, str]:
+    return _sidecar_sdd_candidates(owner, repo)[0]
 
 
-def _sdd_companion_suffix(options: Mapping[str, object]) -> str:
-    raw = options.get("sdd_companion_suffix", options.get("companion_suffix", "sdd"))
+def _sdd_sidecar_suffix(options: Mapping[str, object]) -> str:
+    raw = options.get("sdd_sidecar_suffix", options.get("sidecar_suffix", "sdd"))
     if not isinstance(raw, str):
-        raise RuntimeError("SDD companion suffix must be a string")
-    return _validate_sdd_companion_suffix(raw)
+        raise RuntimeError("SDD sidecar suffix must be a string")
+    return _validate_sdd_sidecar_suffix(raw)
 
 
-def _validate_sdd_companion_suffix(suffix: str) -> str:
+def _validate_sdd_sidecar_suffix(suffix: str) -> str:
     normalized = suffix.strip().removeprefix("--")
     if not normalized or re.fullmatch(r"[a-z0-9][a-z0-9-]*", normalized) is None:
-        raise RuntimeError(f"invalid SDD companion suffix: {suffix!r}")
+        raise RuntimeError(f"invalid SDD sidecar suffix: {suffix!r}")
     return normalized
 
 
@@ -693,7 +693,7 @@ def _sdd_repo_target_from_options(
 _SddRepoProbe = Literal["found", "not_found", "unavailable"]
 
 
-def _discover_companion_sdd_repo(
+def _discover_sidecar_sdd_repo(
     host: str,
     candidates: Sequence[tuple[str, str]],
 ) -> tuple[str, str, _SddRepoProbe] | None:
@@ -708,7 +708,7 @@ def _discover_companion_sdd_repo(
     return primary[0], primary[1], "not_found"
 
 
-def _discover_companion_sdd_repo_for_create(
+def _discover_sidecar_sdd_repo_for_create(
     host: str,
     candidates: Sequence[tuple[str, str]],
 ) -> tuple[str, str, _SddRepoProbe, str | None] | None:
@@ -775,7 +775,7 @@ def _probe_github_repo_detail(
             return (
                 "unavailable",
                 f"{repo_full_name} is archived and read-only; if this project "
-                "migrated to split companions run `sase sdd init`, otherwise "
+                "migrated to split sidecars run `sase sdd init`, otherwise "
                 "unarchive the repo",
             )
         if fields and fields[0]:
@@ -813,7 +813,7 @@ def _create_github_sdd_repo(
     repo_full_name: str,
     *,
     source_repo_full_name: str,
-    companion_suffix: str = "sdd",
+    sidecar_suffix: str = "sdd",
 ) -> bool:
     env = _non_interactive_gh_env()
     env["GH_HOST"] = host
@@ -826,8 +826,8 @@ def _create_github_sdd_repo(
                 repo_full_name,
                 "--public",
                 "--description",
-                _sdd_companion_description(
-                    source_repo_full_name, companion_suffix=companion_suffix
+                _sdd_sidecar_description(
+                    source_repo_full_name, sidecar_suffix=sidecar_suffix
                 ),
             ],
             capture_output=True,
@@ -870,13 +870,13 @@ def _create_github_sdd_repo(
     return True
 
 
-def _sdd_companion_description(
-    source_repo_full_name: str, *, companion_suffix: str
+def _sdd_sidecar_description(
+    source_repo_full_name: str, *, sidecar_suffix: str
 ) -> str:
-    suffix = _validate_sdd_companion_suffix(companion_suffix)
+    suffix = _validate_sdd_sidecar_suffix(sidecar_suffix)
     if suffix == "sdd":
-        return f"SDD companion repository for {source_repo_full_name}"
-    return f"SASE {suffix} companion repository for {source_repo_full_name}"
+        return f"SDD sidecar repository for {source_repo_full_name}"
+    return f"SASE {suffix} sidecar repository for {source_repo_full_name}"
 
 
 def _require_sdd_creation_authorization(
@@ -889,17 +889,17 @@ def _require_sdd_creation_authorization(
     if options.get("sdd_creation_authorized") is True:
         return
     raise RuntimeError(
-        f"creation of GitHub SDD companion repository {repo_full_name} was not "
+        f"creation of GitHub SDD sidecar repository {repo_full_name} was not "
         "authorized; rerun `sase sdd init` and answer y/yes to its repository "
         "creation prompt"
     )
 
 
 def _ensure_github_sdd_label(host: str, repo_full_name: str) -> None:
-    """Best-effort creation of the companion marker label.
+    """Best-effort creation of the sidecar marker label.
 
     The label is informational repository metadata; tokens without
-    label-management rights must still be able to complete companion
+    label-management rights must still be able to complete sidecar
     init, so failures surface as warnings instead of aborting.
     """
     try:
@@ -917,13 +917,13 @@ def _create_github_sdd_label(host: str, repo_full_name: str) -> None:
                 "gh",
                 "label",
                 "create",
-                _SDD_COMPANION_LABEL,
+                _SDD_SIDECAR_LABEL,
                 "--repo",
                 repo_full_name,
                 "--description",
-                _SDD_COMPANION_LABEL_DESCRIPTION,
+                _SDD_SIDECAR_LABEL_DESCRIPTION,
                 "--color",
-                _SDD_COMPANION_LABEL_COLOR,
+                _SDD_SIDECAR_LABEL_COLOR,
                 "--force",
             ],
             capture_output=True,
@@ -964,7 +964,7 @@ def _create_github_sdd_label(host: str, repo_full_name: str) -> None:
         )
 
     message = (
-        f"could not create or update GitHub label {_SDD_COMPANION_LABEL} on "
+        f"could not create or update GitHub label {_SDD_SIDECAR_LABEL} on "
         f"{repo_full_name}"
     )
     if detail:

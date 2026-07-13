@@ -16,7 +16,7 @@ Use this checklist for GitHub Enterprise Server or another self-hosted GitHub ho
    ```
 
    Repo-scoped `gh` commands auto-detect the host from the git remote. The authenticated account must also be able to
-   create the mandatory SDD companion when missing and manage its `sase--sdd` label.
+   create the mandatory SDD sidecar when missing and manage its `sase--sdd` label.
 
 3. **Set `github_hosts` in `~/.config/sase/sase.yml`.** **Put your Enterprise host first** if you want bare
    `#gh(owner/repo)` refs to clone from Enterprise. `github.com` is always included implicitly, but the first configured
@@ -89,23 +89,23 @@ Currently the default config defines:
 
 ## Requirements
 
-- **`gh` CLI** — Required for PR operations and mandatory SDD companion discovery, creation, and labeling. Install from
-  https://cli.github.com/ and authenticate with `gh auth login`; ensure the account can create the companion when
+- **`gh` CLI** — Required for PR operations and mandatory SDD sidecar discovery, creation, and labeling. Install from
+  https://cli.github.com/ and authenticate with `gh auth login`; ensure the account can create the sidecar when
   missing and manage its labels. It is also used for `#gh:<owner>/` repository completion via `gh repo list <owner>`,
   including private repositories visible to the authenticated account. For GitHub Enterprise, authenticate to the
   configured host with `gh auth login --hostname github.mycompany.com`.
 - **Git** — Standard git CLI for repository operations.
 
-## SDD companion repository
+## SDD sidecar repository
 
-Managed projects use public `<owner>/<repo>--plans` and `<owner>/<repo>--research` companions. The legacy
+Managed projects use public `<owner>/<repo>--plans` and `<owner>/<repo>--research` sidecars. The legacy
 `<owner>/<repo>--sdd` candidate and the `sdd.repo.name` override remain supported for unmigrated stores. `sase sdd init`
 fails closed if discovery, creation, labeling, cloning, or the initial push fails. Fix `gh auth status`, repository
 permissions, or network access and retry; SASE does not switch GitHub projects to a local store.
 
-For explicit `sase sdd init`, authoritative read-only discovery precedes materialization. Each missing split companion
+For explicit `sase sdd init`, authoritative read-only discovery precedes materialization. Each missing split sidecar
 requires its own `y` or `yes` response at a default-no prompt naming visibility, full name, and host. Non-interactive
-stdin and bare `sase init --yes` cannot grant it. A companion found during preflight receives no creation authorization,
+stdin and bare `sase init --yes` cannot grant it. A sidecar found during preflight receives no creation authorization,
 so if it disappears before materialization the provider stops instead of silently recreating it.
 
 ## Workspace Layout

@@ -60,7 +60,7 @@ Requires `sase>=0.11.0` as a dependency. For GitHub Enterprise Server or self-ho
 
 - **GitHubWorkspacePlugin** — Workspace provider that handles GitHub-specific workflow orchestration: reference
   resolution (repo paths, project names, changespec names), PR submission via `gh pr merge`, branch management, and
-  commit description formatting. It also owns GitHub SDD policy: every GitHub project requires a labeled companion
+  commit description formatting. It also owns GitHub SDD policy: every GitHub project requires a labeled sidecar
   repository, materialized before `#gh` work starts.
 - **Repo completion for `#gh:<owner>/` refs** — Supplies repository candidates to SASE prompt completion by calling
   `gh repo list <owner>`. Authenticated `gh` sessions include private repositories the user can access, and configured
@@ -96,12 +96,12 @@ itself with sase core:
 When sase detects a repository whose remote origin host is in the configured GitHub host set, it automatically loads
 `GitHubPlugin` and `GitHubWorkspacePlugin` to handle VCS operations and provider-owned SDD storage. The first `#gh` or
 For managed projects, `sase sdd init` finds or creates the public `<owner>/<repo>--plans` and `<owner>/<repo>--research`
-companions and returns their provider metadata to SASE core. The same hooks retain `<owner>/<repo>--sdd` discovery for
+sidecars and returns their provider metadata to SASE core. The same hooks retain `<owner>/<repo>--sdd` discovery for
 legacy stores. Authentication, permission, network, repository creation, labeling, clone, or initial-push failures stop
 setup; there is no GitHub-local SDD fallback.
 
-The explicit `sase sdd init` flow first uses a read-only `gh repo view` preflight for each companion. Existing
-companions connect without a creation prompt. Each missing companion requires a fresh, default-no interactive `y`/`yes`
+The explicit `sase sdd init` flow first uses a read-only `gh repo view` preflight for each sidecar. Existing
+sidecars connect without a creation prompt. Each missing sidecar requires a fresh, default-no interactive `y`/`yes`
 response naming the full `--plans` or `--research` repository. Non-interactive stdin, EOF, interruption, and bare
 `sase init --yes` cannot authorize creation.
 
@@ -109,8 +109,8 @@ response naming the full `--plans` or `--research` repository. Non-interactive s
 
 - Python 3.12+
 - [sase](https://github.com/sase-org/sase) >= 0.11.0
-- [gh](https://cli.github.com/) CLI (for GitHub API operations, mandatory companion repository setup, and `#gh:<owner>/`
-  repository completion). Run `gh auth login`; the account must be able to create the companion when it is missing and
+- [gh](https://cli.github.com/) CLI (for GitHub API operations, mandatory sidecar repository setup, and `#gh:<owner>/`
+  repository completion). Run `gh auth login`; the account must be able to create the sidecar when it is missing and
   manage its labels. For GitHub Enterprise, run `gh auth login --hostname <host>` for each configured Enterprise host.
 
 See [Configuration](docs/configuration.md) for `github_hosts`, `github_orgs`, workspace layout, and the ordered GitHub

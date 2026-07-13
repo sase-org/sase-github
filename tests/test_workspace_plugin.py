@@ -14,7 +14,7 @@ from sase.workspace_provider import ResolvedRef, SUBMITTED_CHECK_EXIT_CODE_CLOSE
 from sase_github.workspace_plugin import (
     GitHubWorkspacePlugin,
     _clone_gh_repo,
-    _companion_sdd_candidates,
+    _sidecar_sdd_candidates,
     _extract_pr_number,
     _github_workspace_dir,
     _list_enabled_project_records,
@@ -112,7 +112,7 @@ def _sdd_label_create_cmd(repo: str) -> list[str]:
         "--repo",
         repo,
         "--description",
-        "SASE SDD companion repository",
+        "SASE SDD sidecar repository",
         "--color",
         "0e8a16",
         "--force",
@@ -604,7 +604,7 @@ class TestSddMaterialization:
             ({"sdd": {"repo": {"name": "other/custom-sdd"}}}, "other/custom-sdd"),
         ],
     )
-    def test_preflight_reports_missing_companion_without_mutations(
+    def test_preflight_reports_missing_sidecar_without_mutations(
         self,
         tmp_path: Path,
         config: dict[str, object],
@@ -630,7 +630,7 @@ class TestSddMaterialization:
             patch("sase_github.config.load_merged_config", return_value=merged),
             patch("sase_github.workspace_plugin.subprocess.run", side_effect=run),
         ):
-            result = GitHubWorkspacePlugin().ws_preflight_sdd_companion(
+            result = GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
                 str(primary),
                 str(primary),
                 {},
@@ -648,7 +648,7 @@ class TestSddMaterialization:
         ]
         assert not (primary / ".sase").exists()
 
-    def test_preflight_reports_existing_and_unavailable_companions(
+    def test_preflight_reports_existing_and_unavailable_sidecars(
         self,
         tmp_path: Path,
     ) -> None:
@@ -667,7 +667,7 @@ class TestSddMaterialization:
         with patch(
             "sase_github.workspace_plugin.subprocess.run", side_effect=run_found
         ):
-            found = GitHubWorkspacePlugin().ws_preflight_sdd_companion(
+            found = GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
                 str(primary), str(primary), {}
             )
         assert found is not None
@@ -685,7 +685,7 @@ class TestSddMaterialization:
         with patch(
             "sase_github.workspace_plugin.subprocess.run", side_effect=run_unavailable
         ):
-            unavailable = GitHubWorkspacePlugin().ws_preflight_sdd_companion(
+            unavailable = GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
                 str(primary), str(primary), {}
             )
         assert unavailable is not None
@@ -712,7 +712,7 @@ class TestSddMaterialization:
             probe, message = _probe_github_repo_detail(
                 "github.com", "acme/widget--sdd"
             )
-            preflight = GitHubWorkspacePlugin().ws_preflight_sdd_companion(
+            preflight = GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
                 str(primary), str(primary), {}
             )
             with pytest.raises(RuntimeError, match="archived and read-only"):
@@ -762,40 +762,40 @@ class TestSddMaterialization:
         assert not any(cmd[:2] == ["git", "clone"] for cmd in calls)
         assert not (primary / ".sase").exists()
 
-    def test_companion_sdd_candidates_default_to_project_specific_repo(self) -> None:
-        assert _companion_sdd_candidates("acme", "widget") == [
+    def test_sidecar_sdd_candidates_default_to_project_specific_repo(self) -> None:
+        assert _sidecar_sdd_candidates("acme", "widget") == [
             ("acme", "widget--sdd"),
         ]
 
     @pytest.mark.parametrize("suffix", ["plans", "research"])
-    def test_companion_sdd_candidates_support_split_suffixes(self, suffix: str) -> None:
+    def test_sidecar_sdd_candidates_support_split_suffixes(self, suffix: str) -> None:
         with patch(
             "sase_github.config.load_merged_config",
             return_value={"sdd": {"repo": {"name": "ignored-for-split"}}},
         ):
-            assert _companion_sdd_candidates("acme", "widget", suffix=suffix) == [
+            assert _sidecar_sdd_candidates("acme", "widget", suffix=suffix) == [
                 ("acme", f"widget--{suffix}")
             ]
 
-    def test_companion_sdd_candidates_respect_repo_name_override(self) -> None:
+    def test_sidecar_sdd_candidates_respect_repo_name_override(self) -> None:
         with patch(
             "sase_github.config.load_merged_config",
             return_value={"sdd": {"repo": {"name": "sdd"}}},
         ):
-            assert _companion_sdd_candidates("acme", "widget") == [
+            assert _sidecar_sdd_candidates("acme", "widget") == [
                 ("acme", "sdd"),
             ]
 
-    def test_companion_sdd_candidates_respect_owner_repo_override(self) -> None:
+    def test_sidecar_sdd_candidates_respect_owner_repo_override(self) -> None:
         with patch(
             "sase_github.config.load_merged_config",
             return_value={"sdd": {"repo": {"name": "other/custom-sdd"}}},
         ):
-            assert _companion_sdd_candidates("acme", "widget") == [
+            assert _sidecar_sdd_candidates("acme", "widget") == [
                 ("other", "custom-sdd"),
             ]
 
-    def test_found_companion_repo_clones_and_returns_positive_record(
+    def test_found_sidecar_repo_clones_and_returns_positive_record(
         self,
         tmp_path: Path,
     ) -> None:
@@ -871,7 +871,7 @@ class TestSddMaterialization:
             call[0][0] for call in mock_run.call_args_list
         ]
 
-    def test_missing_project_companion_is_created_without_org_fallback(
+    def test_missing_project_sidecar_is_created_without_org_fallback(
         self,
         tmp_path: Path,
     ) -> None:
@@ -1135,13 +1135,13 @@ class TestSddMaterialization:
             "acme/widget--sdd",
             "--public",
             "--description",
-            "SDD companion repository for acme/widget",
+            "SDD sidecar repository for acme/widget",
         ] in calls
         assert _sdd_label_create_cmd("acme/widget--sdd") in calls
         assert all("--private" not in cmd for cmd in calls)
 
     @pytest.mark.parametrize("suffix", ["plans", "research"])
-    def test_create_sdd_remote_creates_public_split_companion(
+    def test_create_sdd_remote_creates_public_split_sidecar(
         self, tmp_path: Path, suffix: str
     ) -> None:
         primary = tmp_path / "widget"
@@ -1162,7 +1162,7 @@ class TestSddMaterialization:
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
-                {"create": True, "sdd_companion_suffix": suffix},
+                {"create": True, "sdd_sidecar_suffix": suffix},
             )
 
         repo = f"acme/widget--{suffix}"
@@ -1176,7 +1176,7 @@ class TestSddMaterialization:
             repo,
             "--public",
             "--description",
-            f"SASE {suffix} companion repository for acme/widget",
+            f"SASE {suffix} sidecar repository for acme/widget",
         ] in calls
         assert _sdd_label_create_cmd(repo) in calls
 
@@ -2000,9 +2000,9 @@ class TestGhSetup:
             patch("sase_github.scripts.gh_setup.claim_workspace") as claim,
             patch(
                 "sase_github.scripts.gh_setup.materialize_sdd_store",
-                side_effect=RuntimeError("companion setup failed"),
+                side_effect=RuntimeError("sidecar setup failed"),
             ),
-            pytest.raises(RuntimeError, match="companion setup failed"),
+            pytest.raises(RuntimeError, match="sidecar setup failed"),
         ):
             gh_setup.main(gh_ref="acme/widget", n=None, release=False)
 
