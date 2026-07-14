@@ -709,9 +709,15 @@ def _sdd_repo_target_from_options(
         else default_host
     )
     raw_remote_url = options.get("sdd_remote_url")
-    remote_url = (
+    configured_remote = (
         raw_remote_url.strip()
         if isinstance(raw_remote_url, str) and raw_remote_url.strip()
+        else None
+    )
+    remote_url = (
+        configured_remote
+        if configured_remote is not None
+        and _remote_matches_repo(configured_remote, host, parts[0], parts[1])
         else _github_ssh_url(host, parts[0], parts[1])
     )
     return host, parts[0], parts[1], remote_url

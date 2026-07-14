@@ -1349,6 +1349,43 @@ class TestSddMaterialization:
         assert viewed == ["other/custom-sdd"]
         assert _sdd_label_create_cmd("other/custom-sdd") in calls
 
+    def test_create_sdd_remote_repairs_mismatched_repo_remote_pair(
+        self, tmp_path: Path
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        viewed: list[str] = []
+
+        def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                viewed.append(cmd[3])
+                assert kwargs["env"]["GH_HOST"] == "github.enterprise.test"
+                return _completed(stdout="custom-sdd\n")
+            if cmd[:3] == ["gh", "label", "create"]:
+                return _completed()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_create_sdd_remote(
+                str(primary),
+                str(primary),
+                {
+                    "create": True,
+                    "sdd_repo": "other/custom-sdd",
+                    "sdd_host": "github.enterprise.test",
+                    "sdd_remote_url": "https://github.com/acme/widget--sdd.git",
+                },
+            )
+
+        assert record is not None
+        assert record["repo"] == "other/custom-sdd"
+        assert record["remote_url"] == (
+            "git@github.enterprise.test:other/custom-sdd.git"
+        )
+        assert viewed == ["other/custom-sdd"]
+
     def test_transport_probe_failure_does_not_cache_negative_record(
         self,
         tmp_path: Path,
