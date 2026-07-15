@@ -241,12 +241,10 @@ class GitHubWorkspacePlugin:
         if origin is None:
             return None
 
-        create_options = dict(options)
-        create_options["create"] = True
         record = self.ws_create_sdd_remote(
             primary_workspace_dir,
             workspace_dir,
-            create_options,
+            options,
         )
         if record is None:
             return None
@@ -914,10 +912,8 @@ def _require_sdd_creation_authorization(
     options: Mapping[str, object],
     repo_full_name: str,
 ) -> None:
-    """Enforce guarded explicit-init authorization when core supplies it."""
-    if "sdd_creation_authorized" not in options:
-        return
-    if options.get("sdd_creation_authorized") is True:
+    """Fail closed unless core explicitly authorizes remote creation."""
+    if options.get("create") is True and options.get("sdd_creation_authorized") is True:
         return
     raise RuntimeError(
         f"creation of GitHub SDD sidecar repository {repo_full_name} was not "

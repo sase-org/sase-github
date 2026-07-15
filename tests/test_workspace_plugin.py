@@ -846,7 +846,7 @@ class TestSddMaterialization:
                 GitHubWorkspacePlugin().ws_materialize_sdd_store(
                     str(primary),
                     str(primary),
-                    {"sdd_creation_authorized": False},
+                    {"create": True, "sdd_creation_authorized": False},
                 )
 
         assert not any(cmd[:3] == ["gh", "repo", "create"] for cmd in calls)
@@ -993,7 +993,7 @@ class TestSddMaterialization:
             record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
                 str(primary),
                 str(primary),
-                {"sdd_creation_authorized": True},
+                {"create": True, "sdd_creation_authorized": True},
             )
 
         assert record is not None
@@ -1044,7 +1044,9 @@ class TestSddMaterialization:
         assert record["remote_url"] == "git@github.com:acme/sdd.git"
         assert viewed == ["acme/sdd"]
 
-    def test_not_found_probe_creates_labels_and_clones(self, tmp_path: Path) -> None:
+    def test_not_found_probe_without_core_authorization_refuses_creation(
+        self, tmp_path: Path
+    ) -> None:
         primary = tmp_path / "widget"
         primary.mkdir()
         viewed: list[str] = []
@@ -1058,28 +1060,18 @@ class TestSddMaterialization:
                     returncode=1,
                     stderr="GraphQL: Could not resolve to a Repository.",
                 )
-            if cmd[:3] == ["gh", "repo", "create"]:
-                return _completed(stdout="created\n")
-            if cmd[:3] == ["gh", "label", "create"]:
-                return _completed()
-            if cmd[:2] == ["git", "clone"]:
-                Path(cmd[-1]).mkdir(parents=True)
-                return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
-            record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
-                str(primary),
-                str(primary),
-                {},
-            )
+            with pytest.raises(RuntimeError, match="was not authorized"):
+                GitHubWorkspacePlugin().ws_materialize_sdd_store(
+                    str(primary),
+                    str(primary),
+                    {},
+                )
 
-        assert record is not None
-        assert record["discovery"] == "found"
-        assert record["created"] is True
-        assert record["repo"] == "acme/widget--sdd"
         assert viewed == ["acme/widget--sdd"]
-        assert (primary / ".sase" / "sdd").is_dir()
+        assert not (primary / ".sase" / "sdd").exists()
 
     def test_create_sdd_remote_verifies_existing_repo(self, tmp_path: Path) -> None:
         primary = tmp_path / "widget"
@@ -1138,7 +1130,7 @@ class TestSddMaterialization:
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
-                {"create": True},
+                {"create": True, "sdd_creation_authorized": True},
             )
 
         assert record is not None
@@ -1148,7 +1140,7 @@ class TestSddMaterialization:
         assert viewed == ["acme/widget--sdd"]
         assert _sdd_label_create_cmd("acme/widget--sdd") in calls
 
-    def test_create_sdd_remote_always_creates_when_missing(
+    def test_create_sdd_remote_honors_create_false_when_missing(
         self, tmp_path: Path
     ) -> None:
         primary = tmp_path / "widget"
@@ -1161,23 +1153,16 @@ class TestSddMaterialization:
             if cmd[:3] == ["gh", "repo", "view"]:
                 viewed.append(cmd[3])
                 return _completed(returncode=1, stderr="repository not found")
-            if cmd[:3] == ["gh", "repo", "create"]:
-                return _completed(stdout="created\n")
-            if cmd[:3] == ["gh", "label", "create"]:
-                return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
         with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
-            record = GitHubWorkspacePlugin().ws_create_sdd_remote(
-                str(primary),
-                str(primary),
-                {"create": False},
-            )
+            with pytest.raises(RuntimeError, match="was not authorized"):
+                GitHubWorkspacePlugin().ws_create_sdd_remote(
+                    str(primary),
+                    str(primary),
+                    {"create": False, "sdd_creation_authorized": True},
+                )
 
-        assert record is not None
-        assert record["discovery"] == "found"
-        assert record["created"] is True
-        assert record["repo"] == "acme/widget--sdd"
         assert viewed == ["acme/widget--sdd"]
 
     def test_create_sdd_remote_creates_missing_public_repo(
@@ -1203,7 +1188,7 @@ class TestSddMaterialization:
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
-                {"create": True},
+                {"create": True, "sdd_creation_authorized": True},
             )
 
         assert record is not None
@@ -1254,7 +1239,11 @@ class TestSddMaterialization:
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
-                {"create": True, "sdd_sidecar_suffix": suffix},
+                {
+                    "create": True,
+                    "sdd_creation_authorized": True,
+                    "sdd_sidecar_suffix": suffix,
+                },
             )
 
         repo = f"acme/widget--{suffix}"
@@ -1300,7 +1289,7 @@ class TestSddMaterialization:
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
-                {"create": True},
+                {"create": True, "sdd_creation_authorized": True},
             )
 
         assert record is not None
