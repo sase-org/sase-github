@@ -12,8 +12,10 @@ on:
         default: false
 
 env:
-  SASE_CORE_REF: master
-  SASE_CORE_PATH: .ci/sase
+  SASE_PYTHON_REF: master
+  SASE_PYTHON_PATH: .ci/sase
+  SASE_RUST_CORE_REF: master
+  SASE_RUST_CORE_PATH: .ci/sase-core
 
 jobs:
   release:
@@ -60,6 +62,7 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: dist
@@ -68,16 +71,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: sase-org/sase
-          ref: ${{ env.SASE_CORE_REF }}
-          path: ${{ env.SASE_CORE_PATH }}
+          ref: ${{ env.SASE_PYTHON_REF }}
+          path: ${{ env.SASE_PYTHON_PATH }}
+      - name: Check out SASE Rust core
+        uses: actions/checkout@v4
+        with:
+          repository: sase-org/sase-core
+          ref: ${{ env.SASE_RUST_CORE_REF }}
+          path: ${{ env.SASE_RUST_CORE_PATH }}
       - uses: astral-sh/setup-uv@v4
+      - uses: extractions/setup-just@v2
+      - uses: dtolnay/rust-toolchain@stable
       - name: Set up Python
         run: uv python install 3.12
       - name: Install built sase-github wheel into a fresh venv
         run: |
           uv venv --python 3.12 /tmp/smoke-venv
-          printf -- '-e %s\n' "$(realpath "${SASE_CORE_PATH}")" > /tmp/sase-overrides.txt
+          printf -- '-e %s\n' "$(realpath "${SASE_PYTHON_PATH}")" > /tmp/sase-overrides.txt
           uv pip install --python /tmp/smoke-venv/bin/python --overrides /tmp/sase-overrides.txt dist/*.whl
+          just install-source-sase /tmp/smoke-venv/bin/python
       - name: Smoke check
         run: |
           /tmp/smoke-venv/bin/python - <<'PY'

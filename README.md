@@ -128,8 +128,11 @@ just build      # Build distribution packages
 just clean      # Remove build artifacts
 ```
 
-Set `SASE_CORE_PATH=/path/to/sase` when you need development installs to use an editable SASE checkout before installing
-`sase-github`.
+Set both `SASE_PYTHON_PATH=/path/to/sase` and `SASE_RUST_CORE_PATH=/path/to/sase-core` when development installs need to
+use coordinated source checkouts. The Rust binding is built into the plugin virtual environment before the editable
+SASE checkout is overlaid without dependencies. Leave both variables unset to use the ordinary published dependencies.
+The same variables can be used with `just install-source-sase /path/to/venv/bin/python` to prepare another existing
+virtual environment, such as an install-smoke environment.
 
 ## Project Structure
 

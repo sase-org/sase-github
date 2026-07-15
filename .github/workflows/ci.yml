@@ -10,8 +10,10 @@ permissions:
   contents: read
 
 env:
-  SASE_CORE_REF: master
-  SASE_CORE_PATH: .ci/sase
+  SASE_PYTHON_REF: master
+  SASE_PYTHON_PATH: .ci/sase
+  SASE_RUST_CORE_REF: master
+  SASE_RUST_CORE_PATH: .ci/sase-core
 
 jobs:
   lint:
@@ -22,15 +24,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: sase-org/sase
-          ref: ${{ env.SASE_CORE_REF }}
-          path: ${{ env.SASE_CORE_PATH }}
+          ref: ${{ env.SASE_PYTHON_REF }}
+          path: ${{ env.SASE_PYTHON_PATH }}
+      - name: Check out SASE Rust core
+        uses: actions/checkout@v4
+        with:
+          repository: sase-org/sase-core
+          ref: ${{ env.SASE_RUST_CORE_REF }}
+          path: ${{ env.SASE_RUST_CORE_PATH }}
       - uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
           cache-dependency-glob: "**/pyproject.toml"
       - uses: extractions/setup-just@v2
+      - uses: dtolnay/rust-toolchain@stable
       - name: Set up Python
-        run: uv python install 3.12
+        run: |
+          uv python install 3.12
+          uv venv --python 3.12 .venv
       - name: Install dependencies
         run: just install
       - name: Lint
@@ -47,15 +58,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: sase-org/sase
-          ref: ${{ env.SASE_CORE_REF }}
-          path: ${{ env.SASE_CORE_PATH }}
+          ref: ${{ env.SASE_PYTHON_REF }}
+          path: ${{ env.SASE_PYTHON_PATH }}
+      - name: Check out SASE Rust core
+        uses: actions/checkout@v4
+        with:
+          repository: sase-org/sase-core
+          ref: ${{ env.SASE_RUST_CORE_REF }}
+          path: ${{ env.SASE_RUST_CORE_PATH }}
       - uses: astral-sh/setup-uv@v4
         with:
           enable-cache: true
           cache-dependency-glob: "**/pyproject.toml"
       - uses: extractions/setup-just@v2
+      - uses: dtolnay/rust-toolchain@stable
       - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+        run: |
+          uv python install ${{ matrix.python-version }}
+          uv venv --python ${{ matrix.python-version }} .venv
       - name: Install dependencies
         run: just install
       - name: Run tests
