@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.2.0](https://github.com/sase-org/sase-github/compare/v0.1.7...v0.2.0) (2026-07-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdd:** GitHub workspace-provider integrations must use ws_preflight_sdd_sidecar and the sdd_sidecar_suffix/sidecar_suffix options.
+* **sdd:** GitHub workspaces no longer fall back to local SDD storage; companion repository materialization must succeed before workspace claim.
+* GitHub SDD discovery no longer falls back to <owner>/sdd by default. Set sdd.repo.name to sdd or owner/sdd to keep using an org-level companion repository.
+
+### Features
+
+* add GitHub issue provider operations (sase-69.4) ([2b7bb90](https://github.com/sase-org/sase-github/commit/2b7bb90e1a0d6c70d835e4082a83fab6651ae146))
+* add GitHub ref namespace completion (sase-5i.2) ([f318dbf](https://github.com/sase-org/sase-github/commit/f318dbfc7a04c7e8ed4411265c09481f2219aa35))
+* add GitHub repo completion provider (sase-5h.2) ([bf28a38](https://github.com/sase-org/sase-github/commit/bf28a381db470b7d293f4ef4d046d0fac9f54238))
+* add GitHub SDD companion repo creation (sase-5j.4) ([bd4c37a](https://github.com/sase-org/sase-github/commit/bd4c37a0755f0db7f6ec84913f322ab688138326))
+* clone external GitHub repositories (sase-5y.2) ([b2e3a1a](https://github.com/sase-org/sase-github/commit/b2e3a1aae685c46aaf90b8b21bf6b1a712f775a2))
+* create project-specific SDD companion repos ([1dff94c](https://github.com/sase-org/sase-github/commit/1dff94cad5142e6b4d62cc72fea805fbd7fecad3))
+* create public SDD companions with labels ([975fbd3](https://github.com/sase-org/sase-github/commit/975fbd3176171de30ab44bc74bee7daa0ee66ed0))
+* drop org-level SDD fallback discovery ([c76814d](https://github.com/sase-org/sase-github/commit/c76814d595bad186a484bbc0124fac8967491b1a))
+* materialize GitHub SDD companion repos (sase-5j.3) ([4245691](https://github.com/sase-org/sase-github/commit/4245691e7551e75c0fbf09c29cfc7ae6f1506622))
+* prefer owner sdd companion repos ([b5d31b1](https://github.com/sase-org/sase-github/commit/b5d31b1ef0eab4526783b71e242661bbe8ca222f))
+* **sdd:** adopt sidecar terminology for SDD repositories (sase-5w.2) ([35fa968](https://github.com/sase-org/sase-github/commit/35fa968d585c0dd476aead6bb71b1276be85597d))
+* **sdd:** enforce companion creation authorization ([69551b7](https://github.com/sase-org/sase-github/commit/69551b799fab83090d6680e653448efe190ec549))
+* **sdd:** require companion repository storage ([5a2eb57](https://github.com/sase-org/sase-github/commit/5a2eb57bc044dd9945d54d52c7fa6eb0cf7e5dd9))
+* support split SDD companion repositories (sase-5q.4) ([eb68a32](https://github.com/sase-org/sase-github/commit/eb68a327ad6dbeaade32855807c3582f0320e4b2))
+
+
+### Bug Fixes
+
+* make GitHub ref lookup credential-free ([8821154](https://github.com/sase-org/sase-github/commit/88211548c56df3ae539a175bbb49df8a5cdf26be))
+* **projects:** align GitHub discovery with enabled lifecycle (sase-5w.1) ([ff08b5d](https://github.com/sase-org/sase-github/commit/ff08b5d9bd9dddb3934877bc16a5b2c8c7e163a5))
+* refuse archived SDD repositories ([f5f5246](https://github.com/sase-org/sase-github/commit/f5f5246ade2152ae1c7c62c4baa765c248a7a234))
+* reject mismatched sidecar repository remotes ([f333836](https://github.com/sase-org/sase-github/commit/f3338367c3d35d97ee3ea2828d08214197bb6385))
+* require authorization for SDD repository creation ([f416ff3](https://github.com/sase-org/sase-github/commit/f416ff37ad8f72fe063dc98cf30faeca978c63ef))
+* **sdd:** keep companion init alive when label creation is denied ([f9bd0b1](https://github.com/sase-org/sase-github/commit/f9bd0b16caf4a5d69ec5156af6cfd742371f0a75))
+
 ## [0.1.7](https://github.com/sase-org/sase-github/compare/v0.1.6...v0.1.7) (2026-07-07)
 
 
