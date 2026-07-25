@@ -138,7 +138,9 @@ steps:
         exit 0
       fi
       head_now=$(git rev-parse HEAD)
-      diff_file=$(mktemp /tmp/sase-gh-XXXXXX.diff)
+      diff_dir="${SASE_TMPDIR:-${SASE_HOME:-$HOME/.sase}/tmp}/gh-diffs"
+      mkdir -p "$diff_dir"
+      diff_file=$(mktemp "$diff_dir/sase-gh-XXXXXX.diff")
       if [ "$head_now" != "$head_before" ]; then
         # Commits were made — show only the last commit's diff
         git diff HEAD~1 HEAD > "$diff_file" 2>/dev/null

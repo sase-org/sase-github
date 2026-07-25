@@ -1,10 +1,32 @@
 """Get context step for the #new_pr_desc xprompt workflow."""
 
+import os
 import subprocess
 import tempfile
+from pathlib import Path
 
 from sase.ace.changespec import find_all_changespecs
 from sase.workspace_provider.utils import get_default_branch, parse_workspace_dir
+
+try:
+    from sase.core.paths import (  # type: ignore[attr-defined]
+        get_sase_managed_tmpdir,
+    )
+except ImportError:  # sase < 0.11.2 does not ship the helper yet
+
+    def get_sase_managed_tmpdir(*parts: str) -> str:
+        """Fall back to the same managed root the sase helper resolves."""
+        sase_tmpdir = os.environ.get("SASE_TMPDIR")
+        if sase_tmpdir:
+            root = Path(sase_tmpdir).expanduser()
+        else:
+            sase_home = os.environ.get("SASE_HOME")
+            home = Path(sase_home).expanduser() if sase_home else Path.home() / ".sase"
+            root = home / "tmp"
+        for part in parts:
+            root /= part
+        root.mkdir(parents=True, exist_ok=True)
+        return str(root)
 
 
 def main(*, name: str) -> None:
@@ -71,9 +93,15 @@ def main(*, name: str) -> None:
     except Exception:
         commits = ""
 
-    # Save diff to temp file for the prompt
+    # Save diff to a managed temp file for the prompt. The downstream workflow
+    # interpolates this path, so it outlives this process and is reclaimed by
+    # the managed temp-root reaper rather than deleted here.
     diff_file = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".diff", prefix="pr_desc_", delete=False
+        mode="w",
+        suffix=".diff",
+        prefix="pr_desc_",
+        dir=get_sase_managed_tmpdir("gh-diffs"),
+        delete=False,
     )
     diff_file.write(diff)
     diff_file.close()
