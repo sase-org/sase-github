@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/sase-org/sase-github/compare/v0.2.0...v0.2.1) (2026-07-25)
+
+
+### Bug Fixes
+
+* write handoff diff files under the managed temp root (sase-96.8.5) ([dd5deed](https://github.com/sase-org/sase-github/commit/dd5deedd25aeaccbb984b647c3abf60ea1d5afdc))
+
 ## [0.2.0](https://github.com/sase-org/sase-github/compare/v0.1.7...v0.2.0) (2026-07-16)
 
 
