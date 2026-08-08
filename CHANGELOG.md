@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/sase-org/sase-github/compare/v0.2.1...v0.2.2) (2026-08-08)
+
+
+### Features
+
+* adopt Patch terminology in GitHub integration ([bc4fec5](https://github.com/sase-org/sase-github/commit/bc4fec5d436853eb9b839339d855093d13ce83aa))
+
 ## [0.2.1](https://github.com/sase-org/sase-github/compare/v0.2.0...v0.2.1) (2026-07-25)
 
 
