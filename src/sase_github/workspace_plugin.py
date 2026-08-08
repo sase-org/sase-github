@@ -17,7 +17,17 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from sase.ace.changespec.project_spec_path import preferred_project_spec_path
+try:
+    from sase.ace.patch import Patch, find_all_patches
+    from sase.ace.patch.project_spec_path import preferred_project_spec_path
+except ImportError:  # Older supported SASE releases expose only ChangeSpec names.
+    from sase.ace.changespec import (  # type: ignore[no-redef]
+        ChangeSpec as Patch,
+        find_all_changespecs as find_all_patches,
+    )
+    from sase.ace.changespec.project_spec_path import (  # type: ignore[no-redef]
+        preferred_project_spec_path,
+    )
 from sase.workspace_provider import (
     ExternalRepoCloneResult,
     ResolvedRef,
@@ -456,17 +466,18 @@ class GitHubWorkspacePlugin:
         project_basename: str,
         console: object | None = None,
     ) -> tuple[bool, str | None] | None:
-        """Submit a GitHub ChangeSpec by merging its PR."""
+        """Submit a GitHub Patch by merging its PR."""
         from sase.workspace_provider import detect_workflow_type
 
-        vcs_type = detect_workflow_type(changespec_file)
+        patch_file = changespec_file
+        patch_name = changespec_name
+        vcs_type = detect_workflow_type(patch_file)
         if vcs_type != "gh":
             return None
 
         from rich.console import Console as RichConsole
         from rich.markup import escape as escape_markup
 
-        from sase.ace.changespec import ChangeSpec, find_all_changespecs
         from sase.ace.hooks.processes import (
             kill_and_persist_all_running_processes,
         )
@@ -483,14 +494,13 @@ class GitHubWorkspacePlugin:
             console if isinstance(console, RichConsole) else None
         )
 
-        # Find the ChangeSpec object
-        changespec: ChangeSpec | None = None
-        for cs in find_all_changespecs():
-            if cs.name == changespec_name:
-                changespec = cs
+        patch: Patch | None = None
+        for candidate in find_all_patches():
+            if candidate.name == patch_name:
+                patch = candidate
                 break
-        if changespec is None:
-            return (False, f"ChangeSpec '{changespec_name}' not found")
+        if patch is None:
+            return (False, f"Patch '{patch_name}' not found")
 
         log_fn = (
             (lambda msg: rich_console.print(f"[cyan]{escape_markup(msg)}[/cyan]"))
@@ -498,31 +508,31 @@ class GitHubWorkspacePlugin:
             else None
         )
         kill_and_persist_all_running_processes(
-            changespec,
-            changespec_file,
-            changespec_name,
+            patch,
+            patch_file,
+            patch_name,
             "Killed hook running on submitted PR.",
             log_fn=log_fn,
         )
 
-        all_changespecs = find_all_changespecs()
+        all_patches = find_all_patches()
         if has_active_children(
-            changespec,
-            all_changespecs,
+            patch,
+            all_patches,
             terminal_statuses=("Submitted", "Reverted", "Archived"),
         ):
             return (
                 False,
-                "Cannot submit: other ChangeSpecs have this one as their "
+                "Cannot submit: other Patches have this one as their "
                 "parent and are not Submitted, Reverted, or Archived",
             )
 
-        workspace_dir = parse_workspace_dir(changespec_file)
+        workspace_dir = parse_workspace_dir(patch_file)
         if not workspace_dir:
             return (False, "WORKSPACE_DIR is not set for this project")
 
-        workspace_num = get_first_available_axe_workspace(changespec_file)
-        workflow_name = f"submit-{changespec_name}"
+        workspace_num = get_first_available_axe_workspace(patch_file)
+        workflow_name = f"submit-{patch_name}"
         pid = os.getpid()
 
         try:
@@ -534,11 +544,11 @@ class GitHubWorkspacePlugin:
             rich_console.print(f"[cyan]Claiming workspace #{workspace_num}[/cyan]")
 
         if not claim_workspace(
-            changespec_file,
+            patch_file,
             workspace_num,
             workflow_name,
             pid,
-            changespec_name,
+            patch_name,
         ):
             return (
                 False,
@@ -548,12 +558,12 @@ class GitHubWorkspacePlugin:
         try:
             if rich_console:
                 rich_console.print(
-                    f"[cyan]Checking out {escape_markup(changespec_name)}...[/cyan]"
+                    f"[cyan]Checking out {escape_markup(patch_name)}...[/cyan]"
                 )
 
             provider = get_vcs_provider(ws_dir)
             branch_name = provider.resolve_revision(
-                changespec_name, project_basename, ws_dir
+                patch_name, project_basename, ws_dir
             )
             success, error = provider.checkout(branch_name, ws_dir)
             if not success:
@@ -564,47 +574,46 @@ class GitHubWorkspacePlugin:
 
             if rich_console:
                 rich_console.print(
-                    f"[cyan]Merging {escape_markup(changespec_name)} into "
+                    f"[cyan]Merging {escape_markup(patch_name)} into "
                     f"{escape_markup(default_branch)}...[/cyan]"
                 )
 
             # Prefer the recorded PR URL/number when available — this is
             # resilient to branch renames (e.g. suffix strip/append).
-            pr_number = _extract_pr_number(changespec.pr_url)
+            pr_number = _extract_pr_number(patch.pr_url)
             if pr_number:
                 pr_state = _check_pr_state(pr_number, ws_dir)
                 if pr_state == "OPEN":
                     return _submit_via_pr_merge(
-                        changespec, ws_dir, rich_console, pr_number=pr_number
+                        patch, ws_dir, rich_console, pr_number=pr_number
                     )
                 elif pr_state == "CLOSED":
                     return (
                         False,
-                        f"PR #{pr_number} (from ChangeSpec PR field) is closed "
+                        f"PR #{pr_number} (from Patch PR field) is closed "
                         "and unmerged. Reopen it or create a new PR with #pr.",
                     )
                 elif pr_state == "MERGED":
                     return (
                         False,
-                        f"PR #{pr_number} (from ChangeSpec PR field) is already "
-                        "merged.",
+                        f"PR #{pr_number} (from Patch PR field) is already merged.",
                     )
                 # pr_state is None — fall through to branch-based check
 
             # Fallback: check for a PR on the current branch
             has_pr = _check_existing_pr(ws_dir)
             if has_pr:
-                return _submit_via_pr_merge(changespec, ws_dir, rich_console)
+                return _submit_via_pr_merge(patch, ws_dir, rich_console)
             return (
                 False,
                 "GitHub project has no PR for this branch. Create a PR first with #pr.",
             )
         finally:
             release_workspace(
-                changespec_file,
+                patch_file,
                 workspace_num,
                 workflow_name,
-                changespec_name,
+                patch_name,
             )
             if rich_console:
                 rich_console.print(f"[cyan]Released workspace #{workspace_num}[/cyan]")
@@ -1650,8 +1659,6 @@ def _resolve_existing_named_ref(
     read_only: bool,
     strict: bool,
 ) -> ResolvedRef | None:
-    from sase.ace.changespec import find_all_changespecs
-
     projects_base = _projects_base()
     alias_record = _find_project_record_for_alias(
         _list_project_records(projects_base),
@@ -1675,20 +1682,20 @@ def _resolve_existing_named_ref(
                 checkout_target=checkout_target,
             )
 
-    for cs in find_all_changespecs():
-        if cs.name != gh_ref:
+    for patch in find_all_patches():
+        if patch.name != gh_ref:
             continue
-        workspace_dir = parse_workspace_dir(cs.file_path)
+        workspace_dir = parse_workspace_dir(patch.file_path)
         if not workspace_dir:
             if strict:
                 raise ValueError(
-                    f"ChangeSpec '{gh_ref}' found in {cs.file_path} "
+                    f"Patch '{gh_ref}' found in {patch.file_path} "
                     "but WORKSPACE_DIR is not set"
                 )
             return None
         return ResolvedRef(
-            project_file=cs.file_path,
-            project_name=cs.project_basename,
+            project_file=patch.file_path,
+            project_name=patch.project_basename,
             primary_workspace_dir=workspace_dir,
             checkout_target=f"origin/{gh_ref}",
         )
@@ -1717,7 +1724,7 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
     2. **Project shorthand** (no ``/``, matching project dir): look up
        WORKSPACE_DIR from ``~/.sase/projects/<name>/<name>.sase``
        (with legacy ``.gp`` fallback).
-    3. **ChangeSpec name**: search all changespecs for a matching name,
+    3. **Patch name**: search all Patches for a matching name,
        read WORKSPACE_DIR from its project file.
 
     Raises:
@@ -1782,7 +1789,7 @@ def _check_existing_pr(cwd: str) -> bool:
 
 
 def _submit_via_pr_merge(
-    changespec: object,
+    patch: object,
     ws_dir: str,
     console: object | None,
     *,
@@ -1838,7 +1845,7 @@ def _submit_via_pr_merge(
 
     from sase.workspace_provider.submission_utils import finalize_submission
 
-    return finalize_submission(changespec.file_path, changespec.name, console)  # type: ignore[attr-defined, arg-type]
+    return finalize_submission(patch.file_path, patch.name, console)  # type: ignore[attr-defined, arg-type]
 
 
 def _non_interactive_gh_env(base: Mapping[str, str] | None = None) -> dict[str, str]:

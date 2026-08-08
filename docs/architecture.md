@@ -51,7 +51,7 @@ Handles higher-level workflow orchestration. Implements workspace hooks for GitH
 | `ws_create_sdd_remote()`               | Verifies or creates `--sdd`, `--plans`, or `--research` and returns its metadata  |
 | `ws_prepare_mail()`                    | Displays branch/description and prompts user before pushing                       |
 | `ws_format_commit_description()`       | Prepends `[project]` prefix to commit messages                                    |
-| `ws_submit()`                          | Submits a ChangeSpec by merging its PR via `gh pr merge --merge --delete-branch`  |
+| `ws_submit()`                          | Submits a Patch by merging its PR via `gh pr merge --merge --delete-branch`       |
 
 The provider declares `separate_repo` SDD policy. Core supplies a unique staging path; the plugin finds or creates the
 selected sidecar, ensures its `sase--sdd` label, and clones with the normal SSH/HTTPS fallback. It returns only a
@@ -98,13 +98,13 @@ When the ref matches an existing project directory, `PROJECT_NAME`, or project a
 - Reads `WORKSPACE_DIR` from the project file
 - Checks out the default branch
 
-### Mode 3: ChangeSpec Name
+### Mode 3: Patch Name
 
-When the ref matches an existing ChangeSpec:
+When the ref matches an existing Patch:
 
-- Searches all changespecs for a matching name
-- Reads `WORKSPACE_DIR` from the changespec's project file
-- Checks out `origin/<name>` (the ChangeSpec's branch)
+- Searches all Patches for a matching name
+- Reads `WORKSPACE_DIR` from the Patch's project file
+- Checks out `origin/<name>` (the Patch's branch)
 
 ## Ref Namespace Completion
 
@@ -119,14 +119,14 @@ deduplicated case-insensitively, with record-derived spellings preferred when bo
 
 ## Submission Flow
 
-When submitting a GitHub ChangeSpec (`ws_submit`):
+When submitting a GitHub Patch (`ws_submit`):
 
-1. Kill and persist all running processes on the ChangeSpec
-2. Verify no active child ChangeSpecs exist
-3. Claim a workspace and checkout the ChangeSpec branch
+1. Kill and persist all running processes on the Patch
+2. Verify no active child Patches exist
+3. Claim a workspace and checkout the Patch branch
 4. Check for an existing PR on the branch
 5. Merge via `gh pr merge --merge --delete-branch`
-6. Finalize submission (update ChangeSpec status)
+6. Finalize submission (update Patch status)
 7. Release the workspace
 
 ## Config Helper

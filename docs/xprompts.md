@@ -14,7 +14,7 @@ the target branch, and captures diffs.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `gh_ref` | word | (required) | Repo path (`user/project`), project name, or ChangeSpec name |
+| `gh_ref` | word | (required) | Repo path (`user/project`), project name, or Patch name |
 | `n` | int | `null` | Workspace number override (auto-assigned if null) |
 | `release` | bool | `true` | Whether to release the workspace when done |
 | `workflow_label` | word | `null` | Optional label for the workflow |
@@ -41,7 +41,7 @@ the target branch, and captures diffs.
 # Work on a project by shorthand name
 #gh(sase) Add a new CLI command for status checking
 
-# Resume work on an existing ChangeSpec
+# Resume work on an existing Patch
 #gh(fix-auth-bug) Continue implementing the OAuth flow
 
 # Work without releasing the workspace
@@ -58,12 +58,12 @@ Generates an AI-written PR title and body from the diff and commits on a branch,
 
 | Parameter | Type | Description |
 |---|---|---|
-| `name` | word | ChangeSpec name to generate the description for |
+| `name` | word | Patch name to generate the description for |
 
 ### Steps
 
 1. **get_context** — Runs a Python script that retrieves the diff, commit history, workspace directory, default branch,
-   and current branch name for the ChangeSpec.
+   and current branch name for the Patch.
 2. **generate** — Launches a sub-agent with the diff and commits, instructing it to produce a title (conventional
    commits format, under 72 chars) and a body (markdown with `## Summary` and bullet points).
 3. **apply** — Looks up the PR for the branch via `gh pr view` and updates it with `gh pr edit` using the generated

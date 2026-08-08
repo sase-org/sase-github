@@ -1,4 +1,4 @@
-"""Tests for ws_submit using the recorded PR URL from ChangeSpec.pr_url.
+"""Tests for ws_submit using the recorded PR URL from Patch.pr_url.
 
 Covers:
 - _extract_pr_number extracts from GitHub PR URLs

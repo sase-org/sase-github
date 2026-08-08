@@ -59,7 +59,7 @@ Requires `sase>=0.11.0` as a dependency. For GitHub Enterprise Server or self-ho
 ### Workspace Provider
 
 - **GitHubWorkspacePlugin** — Workspace provider that handles GitHub-specific workflow orchestration: reference
-  resolution (repo paths, project names, changespec names), PR submission via `gh pr merge`, branch management, and
+  resolution (repo paths, project names, Patch names), PR submission via `gh pr merge`, branch management, and
   commit description formatting. It also owns GitHub SDD policy: every GitHub project requires a labeled sidecar
   repository, materialized before `#gh` work starts.
 - **Repo completion for `#gh:<owner>/` refs** — Supplies repository candidates to SASE prompt completion by calling

@@ -1,9 +1,9 @@
-description: Generate and apply a GitHub pull request title and body from a ChangeSpec.
+description: Generate and apply a GitHub pull request title and body from a Patch.
 
 input:
   - name: name
     type: word
-    description: ChangeSpec name whose branch and diff should drive the PR description.
+    description: Patch name whose branch and diff should drive the PR description.
 
 steps:
   - name: get_context
@@ -24,7 +24,7 @@ steps:
     agent: |
       Generate a PR title and body for the following changes.
 
-      ## ChangeSpec Description
+      ## Patch Description
       {{ get_context.description }}
 
       ## Commits

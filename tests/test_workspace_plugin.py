@@ -1914,8 +1914,8 @@ class TestResolveGhRef:
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
-    @patch("sase.ace.changespec.find_all_changespecs")
-    def test_changespec_name(
+    @patch("sase_github.workspace_plugin.find_all_patches")
+    def test_patch_name(
         self,
         mock_find: MagicMock,
         mock_branch: MagicMock,
@@ -1941,8 +1941,8 @@ class TestResolveGhRef:
                 assert result.project_name == "proj"
                 assert result.canonical_ref is None
 
-    @patch("sase.ace.changespec.find_all_changespecs")
-    def test_changespec_no_workspace_dir(self, mock_find: MagicMock) -> None:
+    @patch("sase_github.workspace_plugin.find_all_patches")
+    def test_patch_no_workspace_dir(self, mock_find: MagicMock) -> None:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".sase", delete=False) as f:
             f.write("NAME: my-feature\n")
             f.flush()
@@ -1961,7 +1961,7 @@ class TestResolveGhRef:
                     resolve_gh_ref("my-feature")
             os.unlink(f.name)
 
-    @patch("sase.ace.changespec.find_all_changespecs", return_value=[])
+    @patch("sase_github.workspace_plugin.find_all_patches", return_value=[])
     def test_not_found(self, mock_find: MagicMock) -> None:
         with patch(
             "sase_github.workspace_plugin.Path.home",

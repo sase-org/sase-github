@@ -5,7 +5,7 @@ tags: vcs, rollover
 input:
   - name: gh_ref
     type: word
-    description: GitHub repo, PR, branch, or ChangeSpec reference to check out.
+    description: GitHub repo, PR, branch, or Patch reference to check out.
   - name: n
     type: int
     default: null
@@ -68,14 +68,14 @@ steps:
       provider = get_vcs_provider(os.getcwd())
 
       # Checkout the PR branch so that subsequent diffs are relative to the
-      # PR tip rather than the default branch.  Try checkout_target first
+      # PR tip rather than the default branch. Try checkout_target first
       # (works for default-branch refs like origin/main), then fall back to
-      # ChangeSpec name -> branch name conversion.
-      is_changespec = checkout_target == f"origin/{gh_ref}"
+      # Patch name -> branch name conversion.
+      is_patch = checkout_target == f"origin/{gh_ref}"
       ok, err = provider.checkout(checkout_target, os.getcwd())
       if not ok:
-          if is_changespec:
-              # ChangeSpec ref — resolve name to branch name
+          if is_patch:
+              # Patch ref — resolve name to branch name
               resolved = provider.resolve_revision(
                   gh_ref, project_name, os.getcwd()
               )

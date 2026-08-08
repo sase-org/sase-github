@@ -5,8 +5,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from sase.ace.changespec import find_all_changespecs
 from sase.workspace_provider.utils import get_default_branch, parse_workspace_dir
+
+try:
+    from sase.ace.patch import find_all_patches
+except ImportError:  # Older supported SASE releases expose only ChangeSpec names.
+    from sase.ace.changespec import find_all_changespecs as find_all_patches
 
 try:
     from sase.core.paths import (  # type: ignore[attr-defined]
@@ -30,19 +34,18 @@ except ImportError:  # sase < 0.11.2 does not ship the helper yet
 
 
 def main(*, name: str) -> None:
-    """Find changespec, get diff and commit info for PR description generation.
+    """Find a Patch, then get diff and commit subjects for PR description generation.
 
     Prints key=value output for the workflow executor.
     """
-    # Find the ChangeSpec
-    changespec = None
-    for cs in find_all_changespecs():
-        if cs.name == name:
-            changespec = cs
+    patch = None
+    for candidate in find_all_patches():
+        if candidate.name == name:
+            patch = candidate
             break
 
-    if changespec is None:
-        print(f"error=ChangeSpec '{name}' not found")
+    if patch is None:
+        print(f"error=Patch '{name}' not found")
         print("description=")
         print("diff=")
         print("workspace_dir=")
@@ -50,7 +53,7 @@ def main(*, name: str) -> None:
         print("branch_name=")
         return
 
-    project_file = changespec.file_path
+    project_file = patch.file_path
     workspace_dir = parse_workspace_dir(project_file)
     if not workspace_dir:
         print("error=WORKSPACE_DIR is not set for this project")
@@ -65,7 +68,7 @@ def main(*, name: str) -> None:
     default_branch = default_branch_ref.rsplit("/", 1)[-1]
 
     # Get description
-    desc = changespec.description or "No description"
+    desc = patch.description or "No description"
 
     # Get diff against default branch
     try:
