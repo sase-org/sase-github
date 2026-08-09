@@ -22,7 +22,9 @@ try:
     from sase.ace.patch.project_spec_path import preferred_project_spec_path
 except ImportError:  # Older supported SASE releases expose only ChangeSpec names.
     from sase.ace.changespec import (  # type: ignore[no-redef]
+        # Legacy import names are adapted to canonical Patch locals.
         ChangeSpec as Patch,
+        # Legacy import names are adapted to canonical Patch locals.
         find_all_changespecs as find_all_patches,
     )
     from sase.ace.changespec.project_spec_path import (  # type: ignore[no-redef]
@@ -430,7 +432,9 @@ class GitHubWorkspacePlugin:
     @hookimpl
     def ws_prepare_mail(
         self,
+        # Legacy hook argument name retained for compatibility.
         changespec_name: str,
+        # Legacy hook argument name retained for compatibility.
         changespec_parent: str | None,
         project_basename: str,
         project_file: str,
@@ -461,6 +465,7 @@ class GitHubWorkspacePlugin:
     @hookimpl
     def ws_submit(
         self,
+        # Legacy hook argument name retained for compatibility.
         changespec_file: str,
         changespec_name: str,
         project_basename: str,
@@ -469,7 +474,7 @@ class GitHubWorkspacePlugin:
         """Submit a GitHub Patch by merging its PR."""
         from sase.workspace_provider import detect_workflow_type
 
-        patch_file = changespec_file
+        patch_file = changespec_file  # legacy hook argument name
         patch_name = changespec_name
         vcs_type = detect_workflow_type(patch_file)
         if vcs_type != "gh":
