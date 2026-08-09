@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/sase-org/sase-github/compare/v0.2.2...v0.2.3) (2026-08-09)
+
+
+### Documentation
+
+* mark github plugin patch compatibility boundaries ([e79c33b](https://github.com/sase-org/sase-github/commit/e79c33b231d72605957f793fb6a338c910913af0))
+
 ## [0.2.2](https://github.com/sase-org/sase-github/compare/v0.2.1...v0.2.2) (2026-08-08)
 
 
