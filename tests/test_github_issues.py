@@ -20,7 +20,8 @@ from sase_github.plugin import GitHubPlugin
 
 _MOCK_TARGET = "sase.vcs_provider._command_runner.subprocess.run"
 _JSON_FIELDS = (
-    "number,title,state,body,labels,assignees,author,createdAt,updatedAt,url,comments"
+    "id,number,title,state,body,labels,assignees,author,createdAt,updatedAt,url,"
+    "comments"
 )
 
 
@@ -42,8 +43,10 @@ def _json_issue(
     assignees: tuple[str, ...] = ("octocat",),
     author: str | None = "hubot",
     comments: int = 2,
+    node_id: str | None = None,
 ) -> dict[str, Any]:
     return {
+        "id": node_id if node_id is not None else f"I_kwDOissue{number}",
         "number": number,
         "title": title,
         "state": state,
@@ -105,6 +108,7 @@ def test_list_issues_uses_json_and_normalizes_records(
             updated_at="2026-07-15T11:00:00Z",
             url="https://github.example/owner/repo/issues/42",
             comment_count=2,
+            provider_id="I_kwDOissue42",
         ),
         IssueWire(
             number=7,
@@ -113,6 +117,7 @@ def test_list_issues_uses_json_and_normalizes_records(
             created_at="2026-07-14T10:00:00Z",
             updated_at="2026-07-15T11:00:00Z",
             url="https://github.example/owner/repo/issues/7",
+            provider_id="I_kwDOissue7",
         ),
     ]
     assert _command(mock_run) == [

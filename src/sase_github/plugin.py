@@ -10,7 +10,14 @@ import subprocess
 from collections.abc import Sequence
 from typing import Any, cast
 
-from sase.vcs_provider import IssueListState, IssueState, IssueWire
+from sase.vcs_provider import (
+    IssueListState,
+    IssueState,
+    IssueWire,
+    PullRequestListState,
+    PullRequestState,
+    PullRequestWire,
+)
 from sase.vcs_provider._hookspec import hookimpl
 from sase.vcs_provider._types import CommandOutput
 from sase.vcs_provider.plugins._git_common import GitCommon
@@ -22,7 +29,12 @@ from sase_github.errors import (
 )
 
 _ISSUE_JSON_FIELDS = (
-    "number,title,state,body,labels,assignees,author,createdAt,updatedAt,url,comments"
+    "id,number,title,state,body,labels,assignees,author,createdAt,updatedAt,url,"
+    "comments"
+)
+_PR_JSON_FIELDS = (
+    "id,number,title,state,body,isDraft,author,headRefName,baseRefName,createdAt,"
+    "updatedAt,closedAt,mergedAt,url"
 )
 _UNBOUNDED_ISSUE_LIMIT = 1_000_000
 _AUTH_ERROR_MARKERS = (
@@ -140,6 +152,56 @@ def _issue_from_json(payload: object) -> IssueWire:
         updated_at=_string_field(payload, "updatedAt"),
         url=_string_field(payload, "url"),
         comment_count=_comment_count(payload.get("comments")),
+        provider_id=_string_field(payload, "id"),
+    )
+
+
+def _pull_request_from_json(payload: object) -> PullRequestWire:
+    """Normalize one ``gh pr --json`` object into :class:`PullRequestWire`.
+
+    GitHub reports a merged PR's raw ``state`` as ``MERGED``, distinct from
+    ``CLOSED``; that collapses into our two-valued ``state`` as ``"closed"``,
+    with ``merged_at`` left populated as the signal that tells the two apart.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("pull request must be an object")
+
+    number = payload.get("number")
+    title = payload.get("title")
+    raw_state = payload.get("state")
+    is_draft = payload.get("isDraft")
+    if not isinstance(number, int) or isinstance(number, bool):
+        raise ValueError("number must be an integer")
+    if not isinstance(title, str):
+        raise ValueError("title must be a string")
+    if not isinstance(raw_state, str) or raw_state.casefold() not in {
+        "open",
+        "closed",
+        "merged",
+    }:
+        raise ValueError("state must be open, closed, or merged")
+    if not isinstance(is_draft, bool):
+        raise ValueError("isDraft must be a boolean")
+
+    state = cast(
+        PullRequestState,
+        "closed" if raw_state.casefold() == "merged" else raw_state.casefold(),
+    )
+    return PullRequestWire(
+        number=number,
+        title=title,
+        state=state,
+        provider_id=_string_field(payload, "id"),
+        url=_string_field(payload, "url"),
+        body=_string_field(payload, "body"),
+        is_draft=is_draft,
+        author=_login(payload.get("author"), "author"),
+        head_ref=_string_field(payload, "headRefName"),
+        base_ref=_string_field(payload, "baseRefName"),
+        created_at=_string_field(payload, "createdAt"),
+        updated_at=_string_field(payload, "updatedAt"),
+        closed_at=_string_field(payload, "closedAt"),
+        merged_at=_string_field(payload, "mergedAt"),
     )
 
 
@@ -182,14 +244,14 @@ class GitHubPlugin(GitCommon):
 
     # --- Optional issue-tracker operations ---
 
-    def _run_issue_command(self, cmd: list[str], cwd: str, operation: str) -> str:
+    def _run_gh_command(self, cmd: list[str], cwd: str, operation: str) -> str:
         out = self._run(cmd, cwd)
         if not out.success:
             raise _command_error(operation, out)
         return out.stdout
 
-    def _run_issue_json(self, cmd: list[str], cwd: str, operation: str) -> object:
-        raw = self._run_issue_command(cmd, cwd, operation)
+    def _run_gh_json(self, cmd: list[str], cwd: str, operation: str) -> object:
+        raw = self._run_gh_command(cmd, cwd, operation)
         try:
             return json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -200,7 +262,7 @@ class GitHubPlugin(GitCommon):
 
     def _view_issue(self, issue_ref: int | str, cwd: str) -> IssueWire:
         operation = "gh issue view"
-        payload = self._run_issue_json(
+        payload = self._run_gh_json(
             [
                 "gh",
                 "issue",
@@ -229,7 +291,7 @@ class GitHubPlugin(GitCommon):
     ) -> list[IssueWire]:
         """List GitHub issues and normalize ``gh`` JSON output."""
         operation = "gh issue list"
-        payload = self._run_issue_json(
+        payload = self._run_gh_json(
             [
                 "gh",
                 "issue",
@@ -272,7 +334,7 @@ class GitHubPlugin(GitCommon):
         cmd = ["gh", "issue", "create", "--title", title, "--body", body]
         for label in _ordered_unique(labels):
             cmd.extend(("--label", label))
-        issue_ref = self._run_issue_command(cmd, cwd, operation).strip()
+        issue_ref = self._run_gh_command(cmd, cwd, operation).strip()
         if not issue_ref:
             raise GitHubIssueError(operation, "gh returned no created issue URL")
         return self._view_issue(issue_ref, cwd)
@@ -305,11 +367,11 @@ class GitHubPlugin(GitCommon):
                 if label not in current_set:
                     edit_cmd.extend(("--add-label", label))
         if len(edit_cmd) > 4:
-            self._run_issue_command(edit_cmd, cwd, "gh issue edit")
+            self._run_gh_command(edit_cmd, cwd, "gh issue edit")
 
         if state is not None and state != current.state:
             state_operation = f"gh issue {'close' if state == 'closed' else 'reopen'}"
-            self._run_issue_command(
+            self._run_gh_command(
                 ["gh", "issue", state_operation.rsplit(" ", 1)[-1], str(number)],
                 cwd,
                 state_operation,
@@ -323,7 +385,7 @@ class GitHubPlugin(GitCommon):
     def vcs_get_issue_url(self, number: int, cwd: str) -> str:
         """Return the issue URL while requesting no other issue fields."""
         operation = "gh issue view"
-        url = self._run_issue_command(
+        url = self._run_gh_command(
             [
                 "gh",
                 "issue",
@@ -340,6 +402,58 @@ class GitHubPlugin(GitCommon):
         if not url:
             raise GitHubIssueError(operation, "gh returned no issue URL")
         return url
+
+    # --- Optional pull-request operations ---
+
+    @hookimpl
+    def vcs_list_pull_requests(
+        self,
+        cwd: str,
+        state: PullRequestListState,
+        limit: int,
+    ) -> list[PullRequestWire]:
+        """List GitHub pull requests and normalize ``gh`` JSON output.
+
+        ``gh pr list --state closed`` is not documented to include merged
+        PRs, so any request beyond ``"open"`` fetches ``--state all`` and
+        filters locally by normalized (open/closed) state.
+        """
+        operation = "gh pr list"
+        gh_state = "open" if state == "open" else "all"
+        needs_local_filter = state == "closed"
+        fetch_limit = (
+            _UNBOUNDED_ISSUE_LIMIT
+            if needs_local_filter
+            else (limit if limit > 0 else _UNBOUNDED_ISSUE_LIMIT)
+        )
+        payload = self._run_gh_json(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--state",
+                gh_state,
+                "--limit",
+                str(fetch_limit),
+                "--json",
+                _PR_JSON_FIELDS,
+            ],
+            cwd,
+            operation,
+        )
+        if not isinstance(payload, list):
+            raise GitHubIssueError(operation, "gh returned a non-list JSON value")
+        try:
+            pull_requests = [_pull_request_from_json(pr) for pr in payload]
+        except ValueError as exc:
+            raise GitHubIssueError(
+                operation,
+                f"gh returned invalid pull request JSON: {exc}",
+            ) from exc
+        if needs_local_filter:
+            pull_requests = [pr for pr in pull_requests if pr.state == "closed"]
+            return pull_requests if limit <= 0 else pull_requests[:limit]
+        return pull_requests
 
     @hookimpl
     def vcs_abandon_change(
