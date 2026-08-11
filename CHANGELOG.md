@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/sase-org/sase-github/compare/v0.2.3...v0.2.4) (2026-08-11)
+
+
+### Features
+
+* implement vcs_list_pull_requests over gh pr list ([2b0d6a8](https://github.com/sase-org/sase-github/commit/2b0d6a8d6bc3ecd4cd9e7ebdeb012978cddb1181))
+
 ## [0.2.3](https://github.com/sase-org/sase-github/compare/v0.2.2...v0.2.3) (2026-08-09)
 
 
