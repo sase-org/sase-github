@@ -74,16 +74,31 @@ def main(
     # agent still occupies it. Runs on the pre_allocated branch too: the
     # launcher already wrote its own occupant record, and the conflict
     # decision recognises the caller's own lineage via the shared pid.
-    ensure_workspace_not_occupied(
-        workspace_dir,
-        project_file=project_file,
-        caller=OccupancyCaller(
-            pid=pid,
-            workspace_num=workspace_num,
-            project=project_name,
-            workflow=workflow_name,
-        ),
-    )
+    # A refusal here aborts the step, so the slot this run just claimed must
+    # go back — the workflow's `release` step never runs once `setup` fails.
+    # The pre_allocated branch claimed nothing, so it releases nothing.
+    try:
+        ensure_workspace_not_occupied(
+            workspace_dir,
+            project_file=project_file,
+            caller=OccupancyCaller(
+                pid=pid,
+                workspace_num=workspace_num,
+                project=project_name,
+                workflow=workflow_name,
+            ),
+        )
+    except Exception:
+        if not pre_allocated:
+            release_workspace(
+                project_file,
+                workspace_num,
+                workflow_name,
+                cl_name,
+                caller_tag=_CALLER_TAG,
+            )
+        raise
+
     # Claim the checkout for this run. Workspace numbers 0/1 both mean
     # "primary", never a real numbered workspace (see
     # ``ensure_workspace_checkout``), and the pre_allocated branch's

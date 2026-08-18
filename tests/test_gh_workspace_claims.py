@@ -487,6 +487,85 @@ class TestGhSetupOccupancyGuard:
         assert record is not None
         assert record.pid == os.getppid()
 
+    def test_setup_releases_its_claim_when_the_guard_refuses(
+        self, tmp_path: Path
+    ) -> None:
+        # `setup` failing means the workflow's `release` step never runs, so
+        # the slot this run claimed moments earlier has to go back here or it
+        # stays held for the lifetime of the executor process.
+        project_file = _write_project_file(tmp_path)
+        workspace_dir = tmp_path / "widget_10"
+        workspace_dir.mkdir()
+        write_occupant_record(
+            str(workspace_dir),
+            new_occupant_record(
+                pid=os.getpid(),
+                workflow="gh-acme/widget",
+                project="gh_acme__widget",
+                workspace_num=10,
+                agent_name="rival-agent",
+            ),
+        )
+
+        with (
+            _isolate_ledger(tmp_path),
+            patch(
+                "sase_github.scripts.gh_setup.resolve_ref",
+                return_value=_resolved(project_file),
+            ),
+            patch.dict(os.environ, {"SASE_GH_PRE_ALLOCATED": "0"}),
+            patch(
+                "sase_github.scripts.gh_setup.ensure_workspace_checkout",
+                return_value=str(workspace_dir),
+            ),
+            patch("sase_github.scripts.gh_setup.materialize_sdd_store"),
+            pytest.raises(WorkspaceOccupiedError, match="rival-agent"),
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=False)
+
+        assert get_claimed_workspaces(project_file) == []
+
+    def test_pre_allocated_guard_refusal_releases_nothing(self, tmp_path: Path) -> None:
+        # The launcher owns the pre-allocated claim; a refusal here must not
+        # hand its slot back out from under it.
+        launcher_claim = WorkspaceClaim(10, "ace(run)-launcher", "feature", pid=11111)
+        project_file = _write_project_file(tmp_path, running_claims=[launcher_claim])
+        workspace_dir = tmp_path / "widget_10"
+        workspace_dir.mkdir()
+        write_occupant_record(
+            str(workspace_dir),
+            new_occupant_record(
+                pid=os.getpid(),
+                workflow="ace(run)-rival",
+                project="gh_acme__widget",
+                workspace_num=10,
+                agent_name="rival-agent",
+            ),
+        )
+
+        with (
+            _isolate_ledger(tmp_path),
+            patch(
+                "sase_github.scripts.gh_setup.resolve_ref",
+                return_value=_resolved(project_file),
+            ),
+            patch.dict(
+                os.environ,
+                {
+                    "SASE_GH_PRE_ALLOCATED": "1",
+                    "SASE_GH_WORKSPACE_NUM": "10",
+                    "SASE_GH_WORKSPACE_DIR": str(workspace_dir),
+                },
+            ),
+            patch("sase_github.scripts.gh_setup.materialize_sdd_store"),
+            pytest.raises(WorkspaceOccupiedError, match="rival-agent"),
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=False)
+
+        assert [
+            claim.workspace_num for claim in get_claimed_workspaces(project_file)
+        ] == [10]
+
 
 class TestWsSubmitAtomicClaim:
     def test_submit_acquires_through_claim_next_dir_and_releases(
