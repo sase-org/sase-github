@@ -2062,7 +2062,7 @@ class TestWsResolveRef:
 
 
 class TestGhSetup:
-    def test_materializes_sdd_store_after_checkout(self) -> None:
+    def test_materializes_sdd_store_after_atomic_claim(self) -> None:
         from sase_github.scripts import gh_setup
 
         resolved = ResolvedRef(
@@ -2072,6 +2072,14 @@ class TestGhSetup:
             checkout_target="origin/main",
             canonical_ref="gh_acme__widget",
         )
+        order: list[str] = []
+
+        def claim_next(*_args: object, **_kwargs: object) -> int:
+            order.append("claim")
+            return 7
+
+        def materialize(*_args: object, **_kwargs: object) -> None:
+            order.append("materialize")
 
         with (
             patch("sase_github.scripts.gh_setup.resolve_ref", return_value=resolved),
@@ -2081,17 +2089,20 @@ class TestGhSetup:
                 return_value="/work/widget_7/",
             ),
             patch(
-                "sase_github.scripts.gh_setup.get_first_available_axe_workspace",
-                return_value=7,
+                "sase_github.scripts.gh_setup.claim_next_axe_workspace",
+                side_effect=claim_next,
             ),
-            patch("sase_github.scripts.gh_setup.claim_workspace"),
-            patch("sase_github.scripts.gh_setup.materialize_sdd_store") as materialize,
+            patch(
+                "sase_github.scripts.gh_setup.materialize_sdd_store",
+                side_effect=materialize,
+            ) as materialize_mock,
         ):
             gh_setup.main(gh_ref="acme/widget", n=None, release=False)
 
-        materialize.assert_called_once_with("/work/widget_7/", 7)
+        materialize_mock.assert_called_once_with("/work/widget_7/", 7)
+        assert order == ["claim", "materialize"]
 
-    def test_materialization_failure_prevents_workspace_claim(self) -> None:
+    def test_materialization_failure_releases_claimed_slot(self) -> None:
         from sase_github.scripts import gh_setup
 
         resolved = ResolvedRef(
@@ -2110,10 +2121,10 @@ class TestGhSetup:
                 return_value="/work/widget_7/",
             ),
             patch(
-                "sase_github.scripts.gh_setup.get_first_available_axe_workspace",
+                "sase_github.scripts.gh_setup.claim_next_axe_workspace",
                 return_value=7,
-            ),
-            patch("sase_github.scripts.gh_setup.claim_workspace") as claim,
+            ) as claim,
+            patch("sase_github.scripts.gh_setup.release_workspace") as release,
             patch(
                 "sase_github.scripts.gh_setup.materialize_sdd_store",
                 side_effect=RuntimeError("sidecar setup failed"),
@@ -2122,7 +2133,14 @@ class TestGhSetup:
         ):
             gh_setup.main(gh_ref="acme/widget", n=None, release=False)
 
-        claim.assert_not_called()
+        claim.assert_called_once()
+        release.assert_called_once_with(
+            "/tmp/gh_acme__widget.sase",
+            7,
+            "gh-acme/widget",
+            None,
+            caller_tag="gh-setup",
+        )
 
 
 # ── detect_workflow_type (via plugin) ────────────────────────────────

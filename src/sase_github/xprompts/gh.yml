@@ -126,6 +126,7 @@ steps:
           {{ setup.workspace_num }},
           {{ setup.workflow_name | tojson }},
           {{ gh_ref | tojson }} if "/" not in {{ gh_ref | tojson }} else None,
+          caller_tag="gh-release",
       )
       print("released=true")
     output: { released: bool }

@@ -488,9 +488,8 @@ class GitHubWorkspacePlugin:
         )
         from sase.ace.operations import has_active_children
         from sase.running_field import (
-            claim_workspace,
-            get_first_available_axe_workspace,
-            get_workspace_directory_for_num,
+            WorkspaceClaimError,
+            claim_next_axe_workspace_dir,
             release_workspace,
         )
         from sase.vcs_provider import get_vcs_provider
@@ -536,29 +535,21 @@ class GitHubWorkspacePlugin:
         if not workspace_dir:
             return (False, "WORKSPACE_DIR is not set for this project")
 
-        workspace_num = get_first_available_axe_workspace(patch_file)
         workflow_name = f"submit-{patch_name}"
-        pid = os.getpid()
-
         try:
-            ws_dir, _ = get_workspace_directory_for_num(workspace_num, project_basename)
-        except RuntimeError as e:
-            return (False, f"Failed to get workspace directory: {e}")
+            workspace_num, ws_dir, _ = claim_next_axe_workspace_dir(
+                patch_file,
+                workflow_name,
+                os.getpid(),
+                project_basename,
+                cl_name=patch_name,
+                caller_tag="gh-submit",
+            )
+        except WorkspaceClaimError as exc:
+            return (False, f"Failed to claim workspace: {exc}")
 
         if rich_console:
             rich_console.print(f"[cyan]Claiming workspace #{workspace_num}[/cyan]")
-
-        if not claim_workspace(
-            patch_file,
-            workspace_num,
-            workflow_name,
-            pid,
-            patch_name,
-        ):
-            return (
-                False,
-                f"Failed to claim workspace #{workspace_num}",
-            )
 
         try:
             if rich_console:
@@ -619,6 +610,7 @@ class GitHubWorkspacePlugin:
                 workspace_num,
                 workflow_name,
                 patch_name,
+                caller_tag="gh-submit",
             )
             if rich_console:
                 rich_console.print(f"[cyan]Released workspace #{workspace_num}[/cyan]")
