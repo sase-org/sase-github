@@ -32,6 +32,9 @@ sase_github = "sase_github"
 [project.entry-points."sase_xprompts"]
 sase_github = "sase_github"
 
+[project.entry-points."sase_task_types"]
+github = "sase_github.task_types:GITHUB_TASK_TYPES"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/sase_github"]
 

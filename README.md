@@ -76,6 +76,10 @@ Requires `sase>=0.11.0` as a dependency. For GitHub Enterprise Server or self-ho
 - **`get_github_orgs()`** — Reads `github_orgs` from sase config to determine SSH vs HTTPS clone URLs for
   organizations/users with push access, and to seed local `#gh:` owner completion
 
+### Task type
+
+- **`github`** — Agent-uncreatable task type registered through the `sase_task_types` entry point. Beads of this type are created by SASE's external issue mirror, not by agents.
+
 ### XPrompts
 
 | XPrompt        | Description                                                                        |

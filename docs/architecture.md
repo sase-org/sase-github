@@ -14,6 +14,11 @@ Registered in `pyproject.toml`:
 | `sase_workspace:github`     | `GitHubWorkspacePlugin` | Workspace orchestration (ref resolution, submission, mail prep) |
 | `sase_xprompts:sase_github` | —                       | Makes `#gh`, `#new_pr_desc`, `#prdd` xprompts discoverable      |
 | `sase_config:sase_github`   | —                       | Contributes `default_config.yml` to the sase config chain       |
+| `sase_task_types:github`    | `GITHUB_TASK_TYPES`     | Agent-uncreatable `github` task type for mirrored issues        |
+
+### GitHub task type (`task_types.py`)
+
+Registers one `sase_task_types` spec: `task_type: github`, `agent_creatable: false`, no extra fields. Agents never create this type. SASE's external issue mirror stamps it on new mirrored task beads. This is not an `IssueType`; mirrored issues stay `task` beads with an `external_ref`.
 
 ### GitHubPlugin (`plugin.py`)
 
