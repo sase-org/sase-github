@@ -487,6 +487,11 @@ class GitHubWorkspacePlugin:
             kill_and_persist_all_running_processes,
         )
         from sase.ace.operations import has_active_children
+        from sase.core.occupancy_guard import (
+            OccupancyCaller,
+            WorkspaceOccupiedError,
+            ensure_workspace_not_occupied,
+        )
         from sase.running_field import (
             WorkspaceClaimError,
             claim_next_axe_workspace_dir,
@@ -556,6 +561,20 @@ class GitHubWorkspacePlugin:
                 rich_console.print(
                     f"[cyan]Checking out {escape_markup(patch_name)}...[/cyan]"
                 )
+
+            try:
+                ensure_workspace_not_occupied(
+                    ws_dir,
+                    project_file=patch_file,
+                    caller=OccupancyCaller(
+                        pid=os.getpid(),
+                        workspace_num=workspace_num,
+                        project=project_basename,
+                        workflow=workflow_name,
+                    ),
+                )
+            except WorkspaceOccupiedError as exc:
+                return (False, f"Refusing checkout: {exc}")
 
             provider = get_vcs_provider(ws_dir)
             branch_name = provider.resolve_revision(

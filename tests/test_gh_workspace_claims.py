@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sase.core.occupancy_guard import WorkspaceOccupiedError
 from sase.logs.workspace_claim_ledger import read_ledger_records
 from sase.running_field import (
     ClaimResult,
@@ -16,6 +17,11 @@ from sase.running_field import (
     get_claimed_workspaces,
 )
 from sase.workspace_provider import ResolvedRef
+from sase.workspace_provider.occupant import (
+    new_occupant_record,
+    read_occupant_record,
+    write_occupant_record,
+)
 
 from sase_github.scripts import gh_setup
 from sase_github.workspace_plugin import GitHubWorkspacePlugin
@@ -284,6 +290,204 @@ class TestGhSetupAtomicClaim:
         )
 
 
+def _dead_pid() -> int:
+    """Return a pid that is guaranteed not to be alive right now."""
+    proc = os.fork() if hasattr(os, "fork") else None
+    if proc is None:
+        pytest.skip("os.fork unavailable on this platform")
+    if proc == 0:  # pragma: no cover - child branch
+        os._exit(0)
+    os.waitpid(proc, 0)
+    return proc
+
+
+class TestGhSetupOccupancyGuard:
+    def test_unpinned_setup_writes_occupant_record(self, tmp_path: Path) -> None:
+        project_file = _write_project_file(tmp_path)
+        workspace_dir = tmp_path / "widget_10"
+        workspace_dir.mkdir()
+
+        with (
+            _isolate_ledger(tmp_path),
+            patch(
+                "sase_github.scripts.gh_setup.resolve_ref",
+                return_value=_resolved(project_file),
+            ),
+            patch.dict(os.environ, {"SASE_GH_PRE_ALLOCATED": "0"}),
+            patch(
+                "sase_github.scripts.gh_setup.ensure_workspace_checkout",
+                return_value=str(workspace_dir),
+            ),
+            patch("sase_github.scripts.gh_setup.materialize_sdd_store"),
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=False)
+
+        record = read_occupant_record(str(workspace_dir))
+        assert record is not None
+        assert record.pid == os.getppid()
+        assert record.workflow == "gh-acme/widget"
+        assert record.project == "gh_acme__widget"
+        assert record.workspace_num == 10
+        assert record.cl_name is None
+
+    def test_pinned_setup_writes_occupant_record(self, tmp_path: Path) -> None:
+        project_file = _write_project_file(tmp_path)
+        workspace_dir = tmp_path / "widget_17"
+        workspace_dir.mkdir()
+
+        with (
+            _isolate_ledger(tmp_path),
+            patch(
+                "sase_github.scripts.gh_setup.resolve_ref",
+                return_value=_resolved(project_file),
+            ),
+            patch.dict(os.environ, {"SASE_GH_PRE_ALLOCATED": "0"}),
+            patch(
+                "sase_github.scripts.gh_setup.ensure_workspace_checkout",
+                return_value=str(workspace_dir),
+            ),
+            patch("sase_github.scripts.gh_setup.materialize_sdd_store"),
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=17, release=False)
+
+        record = read_occupant_record(str(workspace_dir))
+        assert record is not None
+        assert record.workspace_num == 17
+
+    def test_pre_allocated_branch_does_not_write_occupant_record(
+        self, tmp_path: Path
+    ) -> None:
+        workspace_dir = tmp_path / "prealloc"
+        workspace_dir.mkdir()
+
+        with (
+            patch(
+                "sase_github.scripts.gh_setup.resolve_ref",
+                return_value=_resolved("proj.sase"),
+            ),
+            patch.dict(
+                os.environ,
+                {
+                    "SASE_GH_PRE_ALLOCATED": "1",
+                    "SASE_GH_WORKSPACE_NUM": "13",
+                    "SASE_GH_WORKSPACE_DIR": str(workspace_dir),
+                },
+            ),
+            patch("sase_github.scripts.gh_setup.materialize_sdd_store"),
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=True)
+
+        assert read_occupant_record(str(workspace_dir)) is None
+
+    def test_setup_refuses_when_occupant_is_other_live_pid(
+        self, tmp_path: Path
+    ) -> None:
+        # No conflicting RUNNING claim: our own claim of #10 succeeds
+        # normally. The stale `.sase/occupant.json` marker left behind by a
+        # rival that never cleared it is what the guard must catch.
+        other_pid = os.getpid()
+        project_file = _write_project_file(tmp_path)
+        workspace_dir = tmp_path / "widget_10"
+        workspace_dir.mkdir()
+        write_occupant_record(
+            str(workspace_dir),
+            new_occupant_record(
+                pid=other_pid,
+                workflow="gh-acme/widget",
+                project="gh_acme__widget",
+                workspace_num=10,
+                agent_name="rival-agent",
+            ),
+        )
+
+        with (
+            _isolate_ledger(tmp_path),
+            patch(
+                "sase_github.scripts.gh_setup.resolve_ref",
+                return_value=_resolved(project_file),
+            ),
+            patch.dict(os.environ, {"SASE_GH_PRE_ALLOCATED": "0"}),
+            patch(
+                "sase_github.scripts.gh_setup.ensure_workspace_checkout",
+                return_value=str(workspace_dir),
+            ),
+            patch("sase_github.scripts.gh_setup.materialize_sdd_store"),
+            pytest.raises(WorkspaceOccupiedError, match="rival-agent"),
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=False)
+
+        # The refusal must happen before setup hands the checkout to
+        # `prepare`/`checkout` — the occupant record on disk must still
+        # name the rival agent, not this run.
+        record = read_occupant_record(str(workspace_dir))
+        assert record is not None
+        assert record.pid == other_pid
+
+    def test_setup_proceeds_when_occupant_is_self(self, tmp_path: Path) -> None:
+        project_file = _write_project_file(tmp_path)
+        workspace_dir = tmp_path / "widget_10"
+        workspace_dir.mkdir()
+        write_occupant_record(
+            str(workspace_dir),
+            new_occupant_record(
+                pid=os.getppid(),
+                workflow="gh-acme/widget",
+                project="gh_acme__widget",
+                workspace_num=10,
+            ),
+        )
+
+        with (
+            _isolate_ledger(tmp_path),
+            patch(
+                "sase_github.scripts.gh_setup.resolve_ref",
+                return_value=_resolved(project_file),
+            ),
+            patch.dict(os.environ, {"SASE_GH_PRE_ALLOCATED": "0"}),
+            patch(
+                "sase_github.scripts.gh_setup.ensure_workspace_checkout",
+                return_value=str(workspace_dir),
+            ),
+            patch("sase_github.scripts.gh_setup.materialize_sdd_store"),
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=False)
+
+        assert read_occupant_record(str(workspace_dir)) is not None
+
+    def test_setup_proceeds_when_occupant_pid_is_dead(self, tmp_path: Path) -> None:
+        project_file = _write_project_file(tmp_path)
+        workspace_dir = tmp_path / "widget_10"
+        workspace_dir.mkdir()
+        write_occupant_record(
+            str(workspace_dir),
+            new_occupant_record(
+                pid=_dead_pid(),
+                workflow="stale-workflow",
+                project="gh_acme__widget",
+                workspace_num=10,
+            ),
+        )
+
+        with (
+            _isolate_ledger(tmp_path),
+            patch(
+                "sase_github.scripts.gh_setup.resolve_ref",
+                return_value=_resolved(project_file),
+            ),
+            patch.dict(os.environ, {"SASE_GH_PRE_ALLOCATED": "0"}),
+            patch(
+                "sase_github.scripts.gh_setup.ensure_workspace_checkout",
+                return_value=str(workspace_dir),
+            ),
+            patch("sase_github.scripts.gh_setup.materialize_sdd_store"),
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=False)
+
+        record = read_occupant_record(str(workspace_dir))
+        assert record is not None
+        assert record.pid == os.getppid()
+
+
 class TestWsSubmitAtomicClaim:
     def test_submit_acquires_through_claim_next_dir_and_releases(
         self, tmp_path: Path
@@ -413,9 +617,76 @@ class TestWsSubmitAtomicClaim:
         assert "claim_next_axe" in operations
         assert "release" in operations
 
+    def test_submit_refuses_checkout_occupied_by_other_live_pid(
+        self, tmp_path: Path
+    ) -> None:
+        patch_file = _write_project_file(tmp_path)
+        ws_dir = tmp_path / "widget_12"
+        ws_dir.mkdir()
+        other_pid = os.getppid()
+        write_occupant_record(
+            str(ws_dir),
+            new_occupant_record(
+                pid=other_pid,
+                workflow="w",
+                project="widget",
+                workspace_num=12,
+                agent_name="rival-agent",
+            ),
+        )
+        plugin = GitHubWorkspacePlugin()
+        provider = MagicMock()
+        claim_next = MagicMock(return_value=(12, str(ws_dir), "widget_12"))
+        release = MagicMock()
+
+        with (
+            patch(
+                "sase.workspace_provider.detect_workflow_type",
+                return_value="gh",
+            ),
+            patch(
+                "sase_github.workspace_plugin.find_all_patches",
+                return_value=[SimpleNamespace(name="feat-branch", pr_url=None)],
+            ),
+            patch("sase.ace.hooks.processes.kill_and_persist_all_running_processes"),
+            patch("sase.ace.operations.has_active_children", return_value=False),
+            patch(
+                "sase_github.workspace_plugin.parse_workspace_dir",
+                return_value="/work/widget/",
+            ),
+            patch(
+                "sase.running_field.claim_next_axe_workspace_dir",
+                claim_next,
+            ),
+            patch("sase.running_field.release_workspace", release),
+            patch("sase.vcs_provider.get_vcs_provider", return_value=provider),
+        ):
+            ok, error = plugin.ws_submit(patch_file, "feat-branch", "widget")
+
+        assert ok is False
+        assert error is not None
+        assert "Refusing checkout" in error
+        assert "rival-agent" in error
+        provider.checkout.assert_not_called()
+        release.assert_called_once_with(
+            patch_file,
+            12,
+            "submit-feat-branch",
+            "feat-branch",
+            caller_tag="gh-submit",
+        )
+
 
 def test_gh_release_step_tags_caller() -> None:
     text = (ROOT / "src" / "sase_github" / "xprompts" / "gh.yml").read_text(
         encoding="utf-8"
     )
     assert 'caller_tag="gh-release"' in text
+
+
+def test_gh_release_step_clears_occupant_record() -> None:
+    text = (ROOT / "src" / "sase_github" / "xprompts" / "gh.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "clear_occupant_record(" in text
+    assert "setup.workspace_dir" in text.split("clear_occupant_record(", 1)[1]

@@ -3,6 +3,7 @@
 import os
 import sys
 
+from sase.core.occupancy_guard import OccupancyCaller, ensure_workspace_not_occupied
 from sase.running_field import (
     WorkspaceClaim,
     claim_next_axe_workspace,
@@ -12,6 +13,7 @@ from sase.running_field import (
 )
 from sase.sdd.store import materialize_sdd_store
 from sase.workspace_provider import resolve_ref
+from sase.workspace_provider.occupant import new_occupant_record, write_occupant_record
 from sase.workspace_provider.utils import ensure_workspace_checkout
 
 _CALLER_TAG = "gh-setup"
@@ -66,6 +68,36 @@ def main(
             pid=pid,
             cl_name=cl_name,
             pinned=not release,
+        )
+
+    # Refuse to hand this checkout to `prepare`/`checkout` if another live
+    # agent still occupies it. Runs on the pre_allocated branch too: the
+    # launcher already wrote its own occupant record, and the conflict
+    # decision recognises the caller's own lineage via the shared pid.
+    ensure_workspace_not_occupied(
+        workspace_dir,
+        project_file=project_file,
+        caller=OccupancyCaller(
+            pid=pid,
+            workspace_num=workspace_num,
+            project=project_name,
+            workflow=workflow_name,
+        ),
+    )
+    # Claim the checkout for this run. Workspace numbers 0/1 both mean
+    # "primary", never a real numbered workspace (see
+    # ``ensure_workspace_checkout``), and the pre_allocated branch's
+    # occupant record already belongs to the launcher.
+    if not pre_allocated and workspace_num > 1:
+        write_occupant_record(
+            workspace_dir,
+            new_occupant_record(
+                pid=pid,
+                workflow=workflow_name,
+                project=project_name,
+                workspace_num=workspace_num,
+                cl_name=cl_name,
+            ),
         )
 
     print(f"project_name={project_name}")
