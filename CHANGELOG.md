@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.5](https://github.com/sase-org/sase-github/compare/v0.2.4...v0.2.5) (2026-08-18)
+
+
+### Features
+
+* register agent-uncreatable github task type ([a68b879](https://github.com/sase-org/sase-github/commit/a68b879ba9a8a0ca5dc6f253a0c66563f9a90d4b))
+
 ## [0.2.4](https://github.com/sase-org/sase-github/compare/v0.2.3...v0.2.4) (2026-08-11)
 
 
