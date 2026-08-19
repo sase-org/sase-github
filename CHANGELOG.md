@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.6](https://github.com/sase-org/sase-github/compare/v0.2.5...v0.2.6) (2026-08-18)
+
+
+### Features
+
+* claim GitHub workspaces atomically ([61dd36f](https://github.com/sase-org/sase-github/commit/61dd36fa1aef7ec71475608e19de3ddf91b67b74))
+* **workspace:** guard gh workflow steps against occupied checkouts ([51347d4](https://github.com/sase-org/sase-github/commit/51347d4f0a256c80785e7e2633fa589259073481))
+
+
+### Bug Fixes
+
+* **workspace:** release the gh setup claim when the occupancy guard refuses ([99a6277](https://github.com/sase-org/sase-github/commit/99a6277ecceb47d702c42351623ed27fbed11822))
+
 ## [0.2.5](https://github.com/sase-org/sase-github/compare/v0.2.4...v0.2.5) (2026-08-18)
 
 
