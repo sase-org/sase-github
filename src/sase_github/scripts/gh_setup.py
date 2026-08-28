@@ -8,6 +8,7 @@ from sase.running_field import (
     WorkspaceClaim,
     claim_next_axe_workspace,
     claim_workspace,
+    find_runner_numbered_workspace,
     get_claimed_workspaces,
     release_workspace,
 )
@@ -61,14 +62,22 @@ def main(
             pinned=not release,
         )
     else:
-        workspace_num, workspace_dir = _claim_next_workspace(
+        adopted = _adopt_runner_workspace(
             project_file=project_file,
             primary_workspace_dir=resolved.primary_workspace_dir,
-            workflow_name=workflow_name,
-            pid=pid,
-            cl_name=cl_name,
-            pinned=not release,
         )
+        if adopted is not None:
+            workspace_num, workspace_dir = adopted
+            pre_allocated = True
+        else:
+            workspace_num, workspace_dir = _claim_next_workspace(
+                project_file=project_file,
+                primary_workspace_dir=resolved.primary_workspace_dir,
+                workflow_name=workflow_name,
+                pid=pid,
+                cl_name=cl_name,
+                pinned=not release,
+            )
 
     # Refuse to hand this checkout to `prepare`/`checkout` if another live
     # agent still occupies it. Runs on the pre_allocated branch too: the
@@ -127,6 +136,20 @@ def main(
     print(f"_chdir={workspace_dir}")
     print(f"meta_workspace={workspace_num}")
     print(f"workflow_name={workflow_name}")
+
+
+def _adopt_runner_workspace(
+    *,
+    project_file: str,
+    primary_workspace_dir: str,
+) -> tuple[int, str] | None:
+    """Reuse the calling runner's numbered pool claim, if it holds one."""
+    workspace_num = find_runner_numbered_workspace(project_file)
+    if workspace_num is None:
+        return None
+    workspace_dir = ensure_workspace_checkout(primary_workspace_dir, workspace_num)
+    materialize_sdd_store(workspace_dir, workspace_num)
+    return workspace_num, workspace_dir
 
 
 def _claim_next_workspace(
