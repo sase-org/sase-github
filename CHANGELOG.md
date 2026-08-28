@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.7](https://github.com/sase-org/sase-github/compare/v0.2.6...v0.2.7) (2026-08-28)
+
+
+### Features
+
+* **gh-setup:** adopt the runner's numbered workspace claim ([5e8e9ea](https://github.com/sase-org/sase-github/commit/5e8e9ea6a48b5b285a65d9cb1fa087f74d52b6b0))
+
 ## [0.2.6](https://github.com/sase-org/sase-github/compare/v0.2.5...v0.2.6) (2026-08-18)
 
 
