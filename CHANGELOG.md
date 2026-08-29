@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.9](https://github.com/sase-org/sase-github/compare/v0.2.8...v0.2.9) (2026-08-29)
+
+
+### Features
+
+* **workspace:** identity-check #gh release and skip on handoff ([2571c9d](https://github.com/sase-org/sase-github/commit/2571c9d7466d4c6020a87b6ee86068c12170cdab))
+
 ## [0.2.8](https://github.com/sase-org/sase-github/compare/v0.2.7...v0.2.8) (2026-08-29)
 
 
