@@ -608,7 +608,7 @@ class TestGhSetupAdoptsRunnerWorkspace:
         assert claims[0].pid == os.getppid()
         assert read_occupant_record(str(workspace_dir)) is None
 
-    def test_does_not_adopt_when_parent_only_holds_placeholder(
+    def test_parent_placeholder_allocation_is_runner_bound(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         placeholder = WorkspaceClaim(
@@ -635,9 +635,13 @@ class TestGhSetupAdoptsRunnerWorkspace:
             claim.workspace_num for claim in get_claimed_workspaces(project_file)
         }
         assert claimed_nums == {0, 10}
+        claims = get_claimed_workspaces(project_file)
+        allocated = next(claim for claim in claims if claim.workspace_num == 10)
+        assert allocated.pid == os.getppid()
         out = capsys.readouterr().out
         assert "workspace_num=10" in out
-        assert "should_release=true" in out
+        assert "should_release=false" in out
+        assert "runner_bound_workspace=true" in out
 
     def test_pinned_n_does_not_adopt_parent_claim(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

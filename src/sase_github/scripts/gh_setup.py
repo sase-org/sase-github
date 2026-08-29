@@ -11,6 +11,7 @@ from sase.running_field import (
     find_runner_numbered_workspace,
     get_claimed_workspaces,
     release_workspace,
+    runner_has_placeholder_workspace,
 )
 from sase.sdd.store import materialize_sdd_store
 from sase.workspace_provider import resolve_ref
@@ -44,6 +45,7 @@ def main(
     # then incorrectly remove the RUNNING entry while the real workflow
     # (the parent process) is still alive.
     pid = os.getppid()
+    runner_bound_workspace = False
 
     # Skip claiming when pre-allocated — the launcher already claimed the workspace
     pre_allocated = os.environ.get("SASE_GH_PRE_ALLOCATED") == "1"
@@ -70,6 +72,9 @@ def main(
             workspace_num, workspace_dir = adopted
             pre_allocated = True
         else:
+            runner_bound_workspace = runner_has_placeholder_workspace(
+                project_file, pid=pid
+            )
             workspace_num, workspace_dir = _claim_next_workspace(
                 project_file=project_file,
                 primary_workspace_dir=resolved.primary_workspace_dir,
@@ -131,8 +136,9 @@ def main(
     print(f"checkout_target={resolved.checkout_target}")
     print(f"primary_workspace_dir={resolved.primary_workspace_dir}")
     # Don't release pre-allocated workspaces — the launcher handles that
-    should_release = release and not pre_allocated
+    should_release = release and not pre_allocated and not runner_bound_workspace
     print(f"should_release={'true' if should_release else 'false'}")
+    print(f"runner_bound_workspace={'true' if runner_bound_workspace else 'false'}")
     print(f"_chdir={workspace_dir}")
     print(f"meta_workspace={workspace_num}")
     print(f"workflow_name={workflow_name}")
