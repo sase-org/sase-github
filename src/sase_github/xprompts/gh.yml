@@ -120,18 +120,15 @@ steps:
     finally: true
     if: "{{ setup.should_release }}"
     python: |
-      from sase.running_field import release_workspace
-      from sase.workspace_provider.occupant import clear_occupant_record
+      from sase_github.scripts.gh_release import main
 
-      release_workspace(
-          {{ setup.project_file | tojson }},
-          {{ setup.workspace_num }},
-          {{ setup.workflow_name | tojson }},
-          {{ gh_ref | tojson }} if "/" not in {{ gh_ref | tojson }} else None,
-          caller_tag="gh-release",
+      main(
+          project_file={{ setup.project_file | tojson }},
+          workspace_num={{ setup.workspace_num }},
+          workspace_dir={{ setup.workspace_dir | tojson }},
+          workflow_name={{ setup.workflow_name | tojson }},
+          cl_name={{ gh_ref | tojson }} if "/" not in {{ gh_ref | tojson }} else None,
       )
-      clear_occupant_record({{ setup.workspace_dir | tojson }})
-      print("released=true")
     output: { released: bool }
 
   - name: diff

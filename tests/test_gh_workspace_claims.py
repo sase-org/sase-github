@@ -23,7 +23,7 @@ from sase.workspace_provider.occupant import (
     write_occupant_record,
 )
 
-from sase_github.scripts import gh_setup
+from sase_github.scripts import gh_release, gh_setup
 from sase_github.workspace_plugin import GitHubWorkspacePlugin
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -939,16 +939,99 @@ class TestWsSubmitAtomicClaim:
         )
 
 
-def test_gh_release_step_tags_caller() -> None:
+def test_gh_release_step_delegates_to_gh_release() -> None:
     text = (ROOT / "src" / "sase_github" / "xprompts" / "gh.yml").read_text(
         encoding="utf-8"
     )
-    assert 'caller_tag="gh-release"' in text
+    assert "from sase_github.scripts.gh_release import main" in text
+    assert "workspace_dir={{ setup.workspace_dir | tojson }}" in text
+    assert "release_workspace(" not in text
+    assert "clear_occupant_record(" not in text
 
 
-def test_gh_release_step_clears_occupant_record() -> None:
-    text = (ROOT / "src" / "sase_github" / "xprompts" / "gh.yml").read_text(
+def test_gh_release_caller_tag() -> None:
+    source = (ROOT / "src" / "sase_github" / "scripts" / "gh_release.py").read_text(
         encoding="utf-8"
     )
-    assert "clear_occupant_record(" in text
-    assert "setup.workspace_dir" in text.split("clear_occupant_record(", 1)[1]
+    assert '_CALLER_TAG = "gh-release"' in source
+
+
+def test_gh_release_step_releases_owned_claim_and_occupant(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runner_pid = os.getppid()
+    project_file = _write_project_file(
+        tmp_path,
+        running_claims=[WorkspaceClaim(23, "gh-acme/widget", None, pid=runner_pid)],
+    )
+    workspace_dir = tmp_path / "widget_23"
+    workspace_dir.mkdir()
+    write_occupant_record(
+        str(workspace_dir),
+        new_occupant_record(
+            pid=runner_pid,
+            workflow="gh-acme/widget",
+            project="gh_acme__widget",
+            workspace_num=23,
+        ),
+    )
+
+    with _isolate_ledger(tmp_path):
+        gh_release.main(
+            project_file=project_file,
+            workspace_num=23,
+            workspace_dir=str(workspace_dir),
+            workflow_name="gh-acme/widget",
+            cl_name=None,
+        )
+
+    out = capsys.readouterr().out
+    assert "released=true" in out
+    assert get_claimed_workspaces(project_file) == []
+    assert read_occupant_record(str(workspace_dir)) is None
+
+
+def test_gh_release_step_skips_on_handoff(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runner_pid = os.getppid()
+    project_file = _write_project_file(
+        tmp_path,
+        running_claims=[WorkspaceClaim(23, "gh-acme/widget", None, pid=runner_pid)],
+    )
+    workspace_dir = tmp_path / "widget_23"
+    workspace_dir.mkdir()
+    write_occupant_record(
+        str(workspace_dir),
+        new_occupant_record(
+            pid=runner_pid,
+            workflow="gh-acme/widget",
+            project="gh_acme__widget",
+            workspace_num=23,
+        ),
+    )
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / ".sase_monitor_pending").write_text("{}", encoding="utf-8")
+
+    with (
+        _isolate_ledger(tmp_path),
+        patch.dict(os.environ, {"SASE_ARTIFACTS_DIR": str(artifacts)}),
+    ):
+        gh_release.main(
+            project_file=project_file,
+            workspace_num=23,
+            workspace_dir=str(workspace_dir),
+            workflow_name="gh-acme/widget",
+            cl_name=None,
+        )
+
+    out = capsys.readouterr().out
+    assert "released=false" in out
+    assert "skip_reason=handoff" in out
+    assert [claim.workspace_num for claim in get_claimed_workspaces(project_file)] == [
+        23
+    ]
+    occupant = read_occupant_record(str(workspace_dir))
+    assert occupant is not None
+    assert occupant.pid == runner_pid
