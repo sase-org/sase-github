@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.8](https://github.com/sase-org/sase-github/compare/v0.2.7...v0.2.8) (2026-08-29)
+
+
+### Features
+
+* **gh:** mark runner-bound workspace allocations ([f4663ae](https://github.com/sase-org/sase-github/commit/f4663ae526929b23378372005662c20b495bd0f7))
+
 ## [0.2.7](https://github.com/sase-org/sase-github/compare/v0.2.6...v0.2.7) (2026-08-28)
 
 
