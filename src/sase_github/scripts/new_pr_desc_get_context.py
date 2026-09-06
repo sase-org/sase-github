@@ -7,10 +7,7 @@ from pathlib import Path
 
 from sase.workspace_provider.utils import get_default_branch, parse_workspace_dir
 
-try:
-    from sase.ace.patch import find_all_patches
-except ImportError:  # Older supported SASE releases expose only ChangeSpec names.
-    from sase.ace.changespec import find_all_changespecs as find_all_patches
+from sase.ace.patch import find_all_patches
 
 try:
     from sase.core.paths import (  # type: ignore[attr-defined]

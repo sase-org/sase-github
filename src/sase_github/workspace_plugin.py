@@ -17,19 +17,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-try:
-    from sase.ace.patch import Patch, find_all_patches
-    from sase.ace.patch.project_spec_path import preferred_project_spec_path
-except ImportError:  # Older supported SASE releases expose only ChangeSpec names.
-    from sase.ace.changespec import (  # type: ignore[no-redef]
-        # Legacy import names are adapted to canonical Patch locals.
-        ChangeSpec as Patch,
-        # Legacy import names are adapted to canonical Patch locals.
-        find_all_changespecs as find_all_patches,
-    )
-    from sase.ace.changespec.project_spec_path import (  # type: ignore[no-redef]
-        preferred_project_spec_path,
-    )
+from sase.ace.patch import Patch, find_all_patches
+from sase.ace.patch.project_spec_path import preferred_project_spec_path
 from sase.workspace_provider import (
     ExternalRepoCloneResult,
     ResolvedRef,

@@ -1,5 +1,4 @@
 description: Check out a GitHub ref in an isolated workspace and show resulting changes.
-wraps_all: true
 tags: vcs, rollover
 
 input:
