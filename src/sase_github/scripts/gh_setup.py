@@ -17,7 +17,10 @@ from sase.running_field import (
 from sase.sdd.store import materialize_sdd_store
 from sase.workspace_provider import resolve_ref
 from sase.workspace_provider.occupant import new_occupant_record, write_occupant_record
-from sase.workspace_provider.utils import ensure_workspace_checkout
+from sase.workspace_provider.utils import (
+    ensure_workspace_checkout,
+    reconcile_managed_checkout_origin,
+)
 
 _CALLER_TAG = "gh-setup"
 
@@ -86,6 +89,16 @@ def main(
             )
 
     try:
+        if (
+            pre_allocated
+            and workspace_num > 1
+            and os.path.isdir(workspace_dir.rstrip("/"))
+        ):
+            reconcile_managed_checkout_origin(
+                workspace_dir,
+                primary_workspace_dir=resolved.primary_workspace_dir,
+                assume_managed_checkout=True,
+            )
         _assert_github_vcs_provider(
             workspace_dir=workspace_dir,
             primary_workspace_dir=resolved.primary_workspace_dir,

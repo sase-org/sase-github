@@ -32,7 +32,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(autouse=True)
 def _github_provider_guard_passes() -> Iterator[None]:
-    with patch("sase_github.scripts.gh_setup._assert_github_vcs_provider"):
+    with (
+        patch("sase_github.scripts.gh_setup._assert_github_vcs_provider"),
+        patch("sase_github.scripts.gh_setup.reconcile_managed_checkout_origin"),
+    ):
         yield
 
 

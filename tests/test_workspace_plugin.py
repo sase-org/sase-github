@@ -2062,6 +2062,58 @@ class TestWsResolveRef:
 
 
 class TestGhSetup:
+    def test_preallocated_workspace_reconciles_origin_before_provider_assertion(
+        self, tmp_path: Path
+    ) -> None:
+        from sase_github.scripts import gh_setup
+
+        workspace_dir = str(tmp_path / "prealloc")
+        Path(workspace_dir).mkdir()
+        resolved = ResolvedRef(
+            project_file="/tmp/gh_acme__widget.sase",
+            project_name="gh_acme__widget",
+            primary_workspace_dir="/work/widget/",
+            checkout_target="origin/main",
+            canonical_ref="gh_acme__widget",
+        )
+        order: list[str] = []
+
+        def reconcile(*_args: object, **_kwargs: object) -> None:
+            order.append("reconcile")
+
+        def assert_provider(*_args: object, **_kwargs: object) -> None:
+            order.append("provider")
+
+        with (
+            patch("sase_github.scripts.gh_setup.resolve_ref", return_value=resolved),
+            patch.dict(
+                os.environ,
+                {
+                    "SASE_GH_PRE_ALLOCATED": "1",
+                    "SASE_GH_WORKSPACE_NUM": "13",
+                    "SASE_GH_WORKSPACE_DIR": workspace_dir,
+                },
+            ),
+            patch("sase_github.scripts.gh_setup.materialize_sdd_store"),
+            patch(
+                "sase_github.scripts.gh_setup.reconcile_managed_checkout_origin",
+                side_effect=reconcile,
+            ) as mock_reconcile,
+            patch(
+                "sase_github.scripts.gh_setup._assert_github_vcs_provider",
+                side_effect=assert_provider,
+            ),
+            patch("sase_github.scripts.gh_setup.ensure_workspace_not_occupied"),
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=True)
+
+        assert order[:2] == ["reconcile", "provider"]
+        mock_reconcile.assert_called_once_with(
+            workspace_dir,
+            primary_workspace_dir="/work/widget/",
+            assume_managed_checkout=True,
+        )
+
     def test_materializes_sdd_store_after_atomic_claim(self) -> None:
         from sase_github.scripts import gh_setup
 
