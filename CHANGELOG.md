@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.10](https://github.com/sase-org/sase-github/compare/v0.2.9...v0.2.10) (2026-09-08)
+
+
+### Bug Fixes
+
+* **gh:** reject non-github setup workspaces ([f032e91](https://github.com/sase-org/sase-github/commit/f032e91b0b10a5a71af913b7d2ad424e1700b93c))
+
 ## [0.2.9](https://github.com/sase-org/sase-github/compare/v0.2.8...v0.2.9) (2026-08-29)
 
 
