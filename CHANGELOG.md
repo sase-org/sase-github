@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.11](https://github.com/sase-org/sase-github/compare/v0.2.10...v0.2.11) (2026-09-08)
+
+
+### Bug Fixes
+
+* **github:** preflight managed clone origins in setup ([d09ee25](https://github.com/sase-org/sase-github/commit/d09ee25f3fac18cd874afb78143d8dfcb6449709))
+
 ## [0.2.10](https://github.com/sase-org/sase-github/compare/v0.2.9...v0.2.10) (2026-09-08)
 
 
