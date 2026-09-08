@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -27,6 +28,12 @@ from sase_github.scripts import gh_release, gh_setup
 from sase_github.workspace_plugin import GitHubWorkspacePlugin
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def _github_provider_guard_passes() -> Iterator[None]:
+    with patch("sase_github.scripts.gh_setup._assert_github_vcs_provider"):
+        yield
 
 
 def _write_project_file(

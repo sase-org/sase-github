@@ -2096,6 +2096,7 @@ class TestGhSetup:
                 "sase_github.scripts.gh_setup.materialize_sdd_store",
                 side_effect=materialize,
             ) as materialize_mock,
+            patch("sase_github.scripts.gh_setup._assert_github_vcs_provider"),
         ):
             gh_setup.main(gh_ref="acme/widget", n=None, release=False)
 
@@ -2134,6 +2135,60 @@ class TestGhSetup:
             gh_setup.main(gh_ref="acme/widget", n=None, release=False)
 
         claim.assert_called_once()
+        release.assert_called_once_with(
+            "/tmp/gh_acme__widget.sase",
+            7,
+            "gh-acme/widget",
+            None,
+            caller_tag="gh-setup",
+        )
+
+    def test_non_github_workspace_provider_releases_claimed_slot(self) -> None:
+        from sase_github.scripts import gh_setup
+
+        resolved = ResolvedRef(
+            project_file="/tmp/gh_acme__widget.sase",
+            project_name="gh_acme__widget",
+            primary_workspace_dir="/work/widget/",
+            checkout_target="origin/main",
+            canonical_ref="gh_acme__widget",
+        )
+
+        with (
+            patch("sase_github.scripts.gh_setup.resolve_ref", return_value=resolved),
+            patch.dict(os.environ, {"SASE_GH_PRE_ALLOCATED": "0"}),
+            patch(
+                "sase_github.scripts.gh_setup.ensure_workspace_checkout",
+                return_value="/work/widget_7/",
+            ),
+            patch(
+                "sase_github.scripts.gh_setup.claim_next_axe_workspace",
+                return_value=7,
+            ),
+            patch(
+                "sase_github.scripts.gh_setup.materialize_sdd_store",
+                return_value=None,
+            ),
+            patch(
+                "sase_github.scripts.gh_setup._detect_vcs_provider_name",
+                return_value="bare_git",
+            ),
+            patch(
+                "sase_github.scripts.gh_setup._origin_url",
+                side_effect=lambda path: {
+                    "/work/widget_7/": "/work/widget/",
+                    "/work/widget/": "git@github.com:acme/widget.git",
+                }[path],
+            ),
+            patch("sase_github.scripts.gh_setup.release_workspace") as release,
+            pytest.raises(RuntimeError) as exc_info,
+        ):
+            gh_setup.main(gh_ref="acme/widget", n=None, release=False)
+
+        message = str(exc_info.value)
+        assert "VCS provider resolved to 'bare_git'" in message
+        assert "workspace origin: /work/widget/" in message
+        assert "expected GitHub origin: git@github.com:acme/widget.git" in message
         release.assert_called_once_with(
             "/tmp/gh_acme__widget.sase",
             7,

@@ -1,6 +1,7 @@
 """Setup step for the #gh xprompt workflow."""
 
 import os
+import subprocess
 import sys
 
 from sase.core.occupancy_guard import OccupancyCaller, ensure_workspace_not_occupied
@@ -83,6 +84,22 @@ def main(
                 cl_name=cl_name,
                 pinned=not release,
             )
+
+    try:
+        _assert_github_vcs_provider(
+            workspace_dir=workspace_dir,
+            primary_workspace_dir=resolved.primary_workspace_dir,
+        )
+    except Exception:
+        if not pre_allocated:
+            release_workspace(
+                project_file,
+                workspace_num,
+                workflow_name,
+                cl_name,
+                caller_tag=_CALLER_TAG,
+            )
+        raise
 
     # Refuse to hand this checkout to `prepare`/`checkout` if another live
     # agent still occupies it. Runs on the pre_allocated branch too: the
@@ -252,6 +269,47 @@ def _materialize_or_release(
         )
         raise
     return workspace_dir
+
+
+def _assert_github_vcs_provider(
+    *,
+    workspace_dir: str,
+    primary_workspace_dir: str,
+) -> None:
+    provider_name = _detect_vcs_provider_name(workspace_dir)
+    if provider_name == "github":
+        return
+    actual_origin = _origin_url(workspace_dir)
+    expected_origin = _origin_url(primary_workspace_dir)
+    raise RuntimeError(
+        "GitHub workflow refused workspace because its VCS provider resolved "
+        f"to {provider_name or 'unknown'!r}, not 'github'. "
+        f"workspace origin: {actual_origin or '<unreadable>'}; "
+        f"expected GitHub origin: {expected_origin or '<unreadable>'}"
+    )
+
+
+def _detect_vcs_provider_name(workspace_dir: str) -> str | None:
+    from sase.vcs_provider import detect_vcs
+
+    return detect_vcs(workspace_dir)
+
+
+def _origin_url(workspace_dir: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"],
+            cwd=workspace_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
 
 
 def _describe_workspace_occupant(project_file: str, workspace_num: int) -> str | None:
