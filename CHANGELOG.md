@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.12](https://github.com/sase-org/sase-github/compare/v0.2.11...v0.2.12) (2026-09-15)
+
+
+### Documentation
+
+* use sase tui launch command ([b180fd3](https://github.com/sase-org/sase-github/commit/b180fd33a1b93269e4f55c0ae216577f64e3a651))
+
 ## [0.2.11](https://github.com/sase-org/sase-github/compare/v0.2.10...v0.2.11) (2026-09-08)
 
 
