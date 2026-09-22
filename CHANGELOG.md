@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.13](https://github.com/sase-org/sase-github/compare/v0.2.12...v0.2.13) (2026-09-22)
+
+
+### Features
+
+* **tool:** add check catalog and recipe guard ([e807f82](https://github.com/sase-org/sase-github/commit/e807f823f6ee137c72503d8367d0a80543196b97))
+
 ## [0.2.12](https://github.com/sase-org/sase-github/compare/v0.2.11...v0.2.12) (2026-09-15)
 
 
