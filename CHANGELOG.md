@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.14](https://github.com/sase-org/sase-github/compare/v0.2.13...v0.2.14) (2026-09-22)
+
+
+### Features
+
+* **projects:** allocate canonical names case-insensitively ([fd5b7bd](https://github.com/sase-org/sase-github/commit/fd5b7bde2ac2e0785640df172e7e321275df406b))
+
 ## [0.2.13](https://github.com/sase-org/sase-github/compare/v0.2.12...v0.2.13) (2026-09-22)
 
 
