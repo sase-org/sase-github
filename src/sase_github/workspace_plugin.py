@@ -1505,12 +1505,17 @@ def _canonical_project_name_base(user: str, project: str) -> str:
 
 
 def _project_refs(records: Sequence[ProjectRecordWire]) -> set[str]:
+    """Return folded project refs occupying the canonical-name namespace.
+
+    Refs compare case-insensitively, so a canonical name is never allocated
+    as a case-variant duplicate of an existing key, name, or alias.
+    """
     occupied: set[str] = set()
     for record in records:
-        occupied.add(record.project_name)
+        occupied.add(record.project_name.casefold())
         if display_name := getattr(record, "display_name", None):
-            occupied.add(display_name)
-        occupied.update(record.aliases)
+            occupied.add(display_name.casefold())
+        occupied.update(alias.casefold() for alias in record.aliases)
     return occupied
 
 
@@ -1524,7 +1529,7 @@ def _allocate_canonical_project_name(
 
     candidate = base
     suffix = 2
-    while candidate in occupied:
+    while candidate.casefold() in occupied:
         candidate = f"{base}-{suffix}"
         suffix += 1
     return candidate

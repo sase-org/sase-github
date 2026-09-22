@@ -1833,6 +1833,26 @@ class TestResolveGhRef:
     @patch(
         "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
     )
+    def test_repo_path_suffixes_case_variant_canonical_project_name(
+        self, mock_branch: MagicMock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            _github_workspace(home, "alice", "foo")
+            _write_project(
+                home,
+                "GH_ALICE__FOO",
+                "WORKSPACE_DIR: /some/other/path/\nNAME: other\n",
+            )
+            path_patch, env_patch = _home_patches(home)
+            with path_patch, env_patch:
+                result = resolve_gh_ref("alice/foo")
+
+            assert result.project_name == "gh_alice__foo-2"
+
+    @patch(
+        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
+    )
     def test_alias_resolves_to_canonical_ref_after_repo_path_first_use(
         self, mock_branch: MagicMock
     ) -> None:
