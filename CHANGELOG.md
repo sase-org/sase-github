@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.16](https://github.com/sase-org/sase-github/compare/v0.2.15...v0.2.16) (2026-09-23)
+
+
+### Documentation
+
+* **xprompts:** plain targeting uses +sase, parens are for arguments ([2b26fa3](https://github.com/sase-org/sase-github/commit/2b26fa35ea2827b141bf52acdaf4c02a6c8e3bab))
+
 ## [0.2.15](https://github.com/sase-org/sase-github/compare/v0.2.14...v0.2.15) (2026-09-23)
 
 
