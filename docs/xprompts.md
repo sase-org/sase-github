@@ -45,8 +45,8 @@ and paren forms with arguments.
 # Work on a GitHub repo by org/project path
 #gh(sase-org/sase) Can you fix the failing tests?
 
-# Work on a project by shorthand name
-#gh(sase) Add a new CLI command for status checking
+# Plain targeting uses the project tag; the paren form is for arguments
+#gh(sase, release=False) Add a new CLI command without releasing the workspace
 
 # Resume work on an existing Patch
 #gh(fix-auth-bug) Continue implementing the OAuth flow
