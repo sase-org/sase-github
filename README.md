@@ -88,6 +88,10 @@ Requires `sase>=0.11.0` as a dependency. For GitHub Enterprise Server or self-ho
 | `#new_pr_desc` | AI-generated PR descriptions from commit diffs                                     |
 | `#prdd`        | Injects PR diff and description as context (auto-appended on feature branches)     |
 
+To target a GitHub project, use a project tag (`+<project>`, for example `+sase`): it expands to the same `#gh`
+workflow as the equivalent `#gh:` ref. `#gh:` remains the spelling for `owner/repo` paths, Patch names, PR refs,
+`@agent` refs, and paren forms with arguments such as `#gh(sase, n=3)`.
+
 ## How It Works
 
 sase-github uses Python [entry points](https://packaging.python.org/en/latest/specifications/entry-points/) to register

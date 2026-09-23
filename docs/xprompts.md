@@ -34,7 +34,14 @@ the target branch, and captures diffs.
 
 ### Usage Examples
 
+Target a GitHub project with a project tag (`+<project>`): it expands to the same `#gh` workflow as the
+equivalent `#gh:` ref. `#gh:` remains the spelling for `owner/repo` paths, Patch names, PR refs, `@agent` refs,
+and paren forms with arguments.
+
 ```
+# Work on a project by project tag (the default)
++sase Add a new CLI command for status checking
+
 # Work on a GitHub repo by org/project path
 #gh(sase-org/sase) Can you fix the failing tests?
 
