@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.15](https://github.com/sase-org/sase-github/compare/v0.2.14...v0.2.15) (2026-09-23)
+
+
+### Documentation
+
+* **xprompts:** present +&lt;project&gt; as the default GitHub project spelling ([204ffd0](https://github.com/sase-org/sase-github/commit/204ffd0737e305b3c5ea6f941d9bfe442e588feb))
+
 ## [0.2.14](https://github.com/sase-org/sase-github/compare/v0.2.13...v0.2.14) (2026-09-22)
 
 
