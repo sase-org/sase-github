@@ -15,17 +15,18 @@ from sase.workspace_provider import (
     SUBMITTED_CHECK_EXIT_CODE_CLOSED,
 )
 
-from sase_github.workspace_plugin import (
-    GitHubWorkspacePlugin,
-    _clone_gh_repo,
-    _sidecar_sdd_candidates,
-    _extract_pr_number,
-    _github_workspace_dir,
-    _list_enabled_project_records,
-    _probe_github_repo_detail,
-    peek_gh_ref,
-    resolve_gh_ref,
+from sase_github.workspace.projects import (
+    enabled_project_records,
+    github_workspace_dir,
 )
+from sase_github.workspace.refs import peek_gh_ref, resolve_gh_ref
+from sase_github.workspace.remotes import clone_gh_repo
+from sase_github.workspace.sdd_repo import (
+    probe_github_repo_detail,
+    sidecar_sdd_candidates,
+)
+from sase_github.workspace.submit import _extract_pr_number
+from sase_github.workspace_plugin import GitHubWorkspacePlugin
 
 
 def _write_project(home: Path, project_name: str, content: str) -> Path:
@@ -44,7 +45,7 @@ def _github_workspace(home: Path, user: str, project: str) -> str:
 
 def _home_patches(home: Path) -> tuple[object, object]:
     return (
-        patch("sase_github.workspace_plugin.Path.home", return_value=home),
+        patch("sase_github.workspace.projects.Path.home", return_value=home),
         patch.dict(os.environ, {"SASE_HOME": str(home / ".sase")}),
     )
 
@@ -181,7 +182,7 @@ def test_external_repo_hook_clones_and_reports_canonical_result(
 
     assert plugin.ws_clone_external_repo("gl", "acme/widget", str(dest)) is None
     with (
-        patch("sase_github.workspace_plugin._clone_gh_repo") as clone,
+        patch("sase_github.workspace_plugin.clone_gh_repo") as clone,
         patch(
             "sase_github.workspace_plugin.get_default_branch",
             return_value="origin/trunk",
@@ -201,16 +202,16 @@ class TestHostAwareWorkspace:
     def test_github_com_workspace_path_is_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            with patch("sase_github.workspace_plugin.Path.home", return_value=home):
-                assert _github_workspace_dir("alice", "repo", host="github.com") == (
+            with patch("sase_github.workspace.projects.Path.home", return_value=home):
+                assert github_workspace_dir("alice", "repo", host="github.com") == (
                     str(home / "projects" / "github" / "alice" / "repo") + "/"
                 )
 
     def test_enterprise_workspace_path_is_namespaced_by_host(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
-            with patch("sase_github.workspace_plugin.Path.home", return_value=home):
-                assert _github_workspace_dir(
+            with patch("sase_github.workspace.projects.Path.home", return_value=home):
+                assert github_workspace_dir(
                     "alice",
                     "repo",
                     host="github.enterprise.test",
@@ -229,8 +230,8 @@ class TestHostAwareWorkspace:
     def test_clone_uses_enterprise_ssh_url_first(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             target = str(Path(d) / "repo")
-            with patch("sase_github.workspace_plugin.subprocess.run") as mock_run:
-                _clone_gh_repo(
+            with patch("sase_github.workspace.remotes.subprocess.run") as mock_run:
+                clone_gh_repo(
                     "alice",
                     "repo",
                     target,
@@ -249,8 +250,8 @@ class TestHostAwareWorkspace:
     def test_clone_uses_ssh_url_form_when_host_has_port(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             target = str(Path(d) / "repo")
-            with patch("sase_github.workspace_plugin.subprocess.run") as mock_run:
-                _clone_gh_repo(
+            with patch("sase_github.workspace.remotes.subprocess.run") as mock_run:
+                clone_gh_repo(
                     "alice",
                     "repo",
                     target,
@@ -273,10 +274,10 @@ class TestHostAwareWorkspace:
                 stderr="ssh denied",
             )
             with patch(
-                "sase_github.workspace_plugin.subprocess.run",
+                "sase_github.workspace.remotes.subprocess.run",
                 side_effect=[ssh_failure, MagicMock(returncode=0)],
             ) as mock_run:
-                _clone_gh_repo(
+                clone_gh_repo(
                     "alice",
                     "repo",
                     target,
@@ -319,10 +320,10 @@ class TestHostAwareWorkspace:
                 return _completed(args=command)
 
             with patch(
-                "sase_github.workspace_plugin.subprocess.run",
+                "sase_github.workspace.remotes.subprocess.run",
                 side_effect=clone_attempt,
             ):
-                remote = _clone_gh_repo("alice", "repo", str(target))
+                remote = clone_gh_repo("alice", "repo", str(target))
 
         assert calls == 2
         assert remote == "https://github.com/alice/repo.git"
@@ -341,11 +342,11 @@ class TestHostAwareWorkspace:
                 stderr="https denied",
             )
             with patch(
-                "sase_github.workspace_plugin.subprocess.run",
+                "sase_github.workspace.remotes.subprocess.run",
                 side_effect=[ssh_failure, https_failure],
             ):
                 with pytest.raises(RuntimeError) as exc_info:
-                    _clone_gh_repo(
+                    clone_gh_repo(
                         "alice",
                         "repo",
                         target,
@@ -377,18 +378,16 @@ class TestHostAwareWorkspace:
 
             with (
                 patch(
-                    "sase_github.workspace_plugin.subprocess.run",
+                    "sase_github.workspace.remotes.subprocess.run",
                     side_effect=fail_with_partial,
                 ),
                 pytest.raises(RuntimeError),
             ):
-                _clone_gh_repo("alice", "repo", str(target))
+                clone_gh_repo("alice", "repo", str(target))
 
             assert not target.exists()
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_repo_path_uses_default_enterprise_host(
         self,
         mock_branch: MagicMock,
@@ -403,7 +402,7 @@ class TestHostAwareWorkspace:
                     "sase_github.config.get_default_github_host",
                     return_value="github.enterprise.test",
                 ),
-                patch("sase_github.workspace_plugin.subprocess.run") as mock_run,
+                patch("sase_github.workspace.remotes.subprocess.run") as mock_run,
             ):
                 result = resolve_gh_ref("alice/repo")
 
@@ -462,11 +461,11 @@ class TestRepoCandidateCompletion:
 
         with (
             patch(
-                "sase_github.workspace_plugin._repo_completion_limit",
+                "sase_github.workspace.completion._repo_completion_limit",
                 return_value=2,
             ),
             patch(
-                "sase_github.workspace_plugin.subprocess.run",
+                "sase_github.workspace.completion.subprocess.run",
                 return_value=_completed_gh_repo_list(stdout=json.dumps(payload)),
             ) as mock_run,
         ):
@@ -508,7 +507,7 @@ class TestRepoCandidateCompletion:
                 return_value="github.enterprise.test",
             ),
             patch(
-                "sase_github.workspace_plugin.subprocess.run",
+                "sase_github.workspace.completion.subprocess.run",
                 return_value=_completed_gh_repo_list(stdout="[]"),
             ) as mock_run,
         ):
@@ -578,7 +577,7 @@ class TestRepoCandidateCompletion:
         expected_message: str,
     ) -> None:
         with patch(
-            "sase_github.workspace_plugin.subprocess.run",
+            "sase_github.workspace.completion.subprocess.run",
             side_effect=side_effect,
             return_value=return_value,
         ):
@@ -609,7 +608,7 @@ class TestRefNamespaceCompletion:
 
         with (
             patch(
-                "sase_github.workspace_plugin._list_enabled_project_records",
+                "sase_github.workspace.completion.enabled_project_records",
                 return_value=records,
             ),
             patch("sase_github.config.get_github_orgs", return_value=[]),
@@ -630,7 +629,7 @@ class TestRefNamespaceCompletion:
 
         with (
             patch(
-                "sase_github.workspace_plugin._list_enabled_project_records",
+                "sase_github.workspace.completion.enabled_project_records",
                 return_value=records,
             ),
             patch(
@@ -656,7 +655,7 @@ class TestRefNamespaceCompletion:
             "sase.core.project_lifecycle_facade.list_project_records",
             return_value=[],
         ) as list_records:
-            assert _list_enabled_project_records(projects_base) == []
+            assert enabled_project_records(projects_base) == []
 
         list_records.assert_called_once_with(
             projects_base,
@@ -669,12 +668,12 @@ class TestRefNamespaceCompletion:
 
         with (
             patch(
-                "sase_github.workspace_plugin._list_enabled_project_records",
+                "sase_github.workspace.completion.enabled_project_records",
                 return_value=records,
             ),
             patch("sase_github.config.get_github_orgs", return_value=["bbugyi200"]),
             patch(
-                "sase_github.workspace_plugin.subprocess.run",
+                "subprocess.run",
                 side_effect=AssertionError("namespace completion must stay local"),
             ),
         ):
@@ -722,7 +721,7 @@ class TestSddMaterialization:
         merged = {"github_hosts": ["github.enterprise.test"], **config}
         with (
             patch("sase_github.config.load_merged_config", return_value=merged),
-            patch("sase_github.workspace_plugin.subprocess.run", side_effect=run),
+            patch("subprocess.run", side_effect=run),
         ):
             result = GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
                 str(primary),
@@ -758,9 +757,7 @@ class TestSddMaterialization:
                 return _completed(stdout="widget--sdd\n")
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch(
-            "sase_github.workspace_plugin.subprocess.run", side_effect=run_found
-        ):
+        with patch("subprocess.run", side_effect=run_found):
             found = GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
                 str(primary), str(primary), {}
             )
@@ -776,9 +773,7 @@ class TestSddMaterialization:
                 return _completed(returncode=1, stderr="authentication required")
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch(
-            "sase_github.workspace_plugin.subprocess.run", side_effect=run_unavailable
-        ):
+        with patch("subprocess.run", side_effect=run_unavailable):
             unavailable = GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
                 str(primary), str(primary), {}
             )
@@ -802,8 +797,8 @@ class TestSddMaterialization:
                 return _completed(stdout="widget--sdd\ttrue\n")
             raise AssertionError(f"archived repository must not be adopted: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
-            probe, message = _probe_github_repo_detail("github.com", "acme/widget--sdd")
+        with patch("subprocess.run", side_effect=run):
+            probe, message = probe_github_repo_detail("github.com", "acme/widget--sdd")
             preflight = GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
                 str(primary), str(primary), {}
             )
@@ -841,7 +836,7 @@ class TestSddMaterialization:
                 return _completed(returncode=1, stderr="repository not found")
             raise AssertionError(f"authorization denial must not run: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             with pytest.raises(RuntimeError, match="was not authorized"):
                 GitHubWorkspacePlugin().ws_materialize_sdd_store(
                     str(primary),
@@ -855,7 +850,7 @@ class TestSddMaterialization:
         assert not (primary / ".sase").exists()
 
     def test_sidecar_sdd_candidates_default_to_project_specific_repo(self) -> None:
-        assert _sidecar_sdd_candidates("acme", "widget") == [
+        assert sidecar_sdd_candidates("acme", "widget") == [
             ("acme", "widget--sdd"),
         ]
 
@@ -865,7 +860,7 @@ class TestSddMaterialization:
             "sase_github.config.load_merged_config",
             return_value={"sdd": {"repo": {"name": "ignored-for-split"}}},
         ):
-            assert _sidecar_sdd_candidates("acme", "widget", suffix=suffix) == [
+            assert sidecar_sdd_candidates("acme", "widget", suffix=suffix) == [
                 ("acme", f"widget--{suffix}")
             ]
 
@@ -874,7 +869,7 @@ class TestSddMaterialization:
             "sase_github.config.load_merged_config",
             return_value={"sdd": {"repo": {"name": "sdd"}}},
         ):
-            assert _sidecar_sdd_candidates("acme", "widget") == [
+            assert sidecar_sdd_candidates("acme", "widget") == [
                 ("acme", "sdd"),
             ]
 
@@ -883,7 +878,7 @@ class TestSddMaterialization:
             "sase_github.config.load_merged_config",
             return_value={"sdd": {"repo": {"name": "other/custom-sdd"}}},
         ):
-            assert _sidecar_sdd_candidates("acme", "widget") == [
+            assert sidecar_sdd_candidates("acme", "widget") == [
                 ("other", "custom-sdd"),
             ]
 
@@ -916,12 +911,10 @@ class TestSddMaterialization:
                 return_value={"github_hosts": ["github.enterprise.test"]},
             ),
             patch(
-                "sase_github.workspace_plugin._sdd_network_timeout",
+                "sase_github.workspace.sdd_repo._sdd_network_timeout",
                 return_value=7.0,
             ),
-            patch(
-                "sase_github.workspace_plugin.subprocess.run", side_effect=run
-            ) as mock_run,
+            patch("subprocess.run", side_effect=run) as mock_run,
         ):
             record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
                 str(primary),
@@ -989,7 +982,7 @@ class TestSddMaterialization:
                 return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
                 str(primary),
                 str(primary),
@@ -1030,7 +1023,7 @@ class TestSddMaterialization:
                 "sase_github.config.load_merged_config",
                 return_value={"sdd": {"repo": {"name": "sdd"}}},
             ),
-            patch("sase_github.workspace_plugin.subprocess.run", side_effect=run),
+            patch("subprocess.run", side_effect=run),
         ):
             record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
                 str(primary),
@@ -1062,7 +1055,7 @@ class TestSddMaterialization:
                 )
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             with pytest.raises(RuntimeError, match="was not authorized"):
                 GitHubWorkspacePlugin().ws_materialize_sdd_store(
                     str(primary),
@@ -1088,7 +1081,7 @@ class TestSddMaterialization:
                 return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
@@ -1126,7 +1119,7 @@ class TestSddMaterialization:
                 return _completed(stdout="created\n")
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
@@ -1155,7 +1148,7 @@ class TestSddMaterialization:
                 return _completed(returncode=1, stderr="repository not found")
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             with pytest.raises(RuntimeError, match="was not authorized"):
                 GitHubWorkspacePlugin().ws_create_sdd_remote(
                     str(primary),
@@ -1184,7 +1177,7 @@ class TestSddMaterialization:
                 return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
@@ -1235,7 +1228,7 @@ class TestSddMaterialization:
                 return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
@@ -1285,7 +1278,7 @@ class TestSddMaterialization:
                 return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
@@ -1318,7 +1311,7 @@ class TestSddMaterialization:
                 return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
@@ -1356,7 +1349,7 @@ class TestSddMaterialization:
                 return _completed()
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
@@ -1391,7 +1384,7 @@ class TestSddMaterialization:
                 )
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             with pytest.raises(RuntimeError, match="could not reach github.com"):
                 GitHubWorkspacePlugin().ws_materialize_sdd_store(
                     str(primary),
@@ -1429,7 +1422,7 @@ class TestSddMaterialization:
                 return _completed(returncode=1, stderr=stderr)
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             with pytest.raises(RuntimeError, match=expected):
                 GitHubWorkspacePlugin().ws_create_sdd_remote(
                     str(primary),
@@ -1437,7 +1430,7 @@ class TestSddMaterialization:
                     {"create": True},
                 )
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             with pytest.raises(RuntimeError, match=expected):
                 GitHubWorkspacePlugin().ws_materialize_sdd_store(
                     str(primary),
@@ -1501,7 +1494,7 @@ class TestSddMaterialization:
                 )
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_create_sdd_remote(
                 str(primary),
                 str(primary),
@@ -1531,7 +1524,7 @@ class TestSddMaterialization:
                 raise FileNotFoundError("gh")
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             with pytest.raises(RuntimeError, match="gh not found"):
                 GitHubWorkspacePlugin().ws_create_sdd_remote(
                     str(primary),
@@ -1539,7 +1532,7 @@ class TestSddMaterialization:
                     {"create": True},
                 )
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             with pytest.raises(RuntimeError, match="gh not found"):
                 GitHubWorkspacePlugin().ws_materialize_sdd_store(
                     str(primary),
@@ -1568,7 +1561,7 @@ class TestSddMaterialization:
                 raise AssertionError("local SDD content must not be clobbered")
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
                 str(primary),
                 str(primary),
@@ -1601,7 +1594,7 @@ class TestSddMaterialization:
                 raise AssertionError("matching SDD remote should be adopted")
             raise AssertionError(f"unexpected command: {cmd}")
 
-        with patch("sase_github.workspace_plugin.subprocess.run", side_effect=run):
+        with patch("subprocess.run", side_effect=run):
             record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
                 str(primary),
                 str(primary),
@@ -1636,9 +1629,7 @@ class TestSddMaterialization:
                 "sase_github.config.load_merged_config",
                 return_value={"sdd": {"repo": {"name": "other/custom-sdd"}}},
             ),
-            patch(
-                "sase_github.workspace_plugin.subprocess.run", side_effect=run
-            ) as mock_run,
+            patch("subprocess.run", side_effect=run) as mock_run,
         ):
             record = GitHubWorkspacePlugin().ws_materialize_sdd_store(
                 str(primary),
@@ -1674,7 +1665,7 @@ class TestResolveGhRef:
                 path_patch,
                 env_patch,
                 patch(
-                    "sase_github.workspace_plugin.subprocess.run",
+                    "sase_github.workspace.remotes.subprocess.run",
                     side_effect=[clone_failure, clone_failure],
                 ),
                 pytest.raises(RuntimeError, match="git clone failed for acme/missing"),
@@ -1684,9 +1675,7 @@ class TestResolveGhRef:
             project_dir = home / ".sase" / "projects" / "gh_acme__missing"
             assert not project_dir.exists()
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_repo_path_creates_canonical_project_and_name(
         self, mock_branch: MagicMock
     ) -> None:
@@ -1714,9 +1703,7 @@ class TestResolveGhRef:
             assert "PROJECT_NAME: myrepo\n" in content
             assert "PROJECT_ALIASES" not in content
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_duplicate_repo_basename_gets_distinct_name(
         self, mock_branch: MagicMock
     ) -> None:
@@ -1736,9 +1723,7 @@ class TestResolveGhRef:
             assert "PROJECT_NAME: foo\n" in first_file.read_text(encoding="utf-8")
             assert "PROJECT_NAME: foo_1\n" in second_file.read_text(encoding="utf-8")
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_repo_path_reuses_legacy_basename_project(
         self, mock_branch: MagicMock
     ) -> None:
@@ -1759,9 +1744,7 @@ class TestResolveGhRef:
             assert result.project_file == str(project_file)
             assert "PROJECT_ALIASES" not in content
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_repo_path_reuses_existing_auto_aliased_project_without_migration(
         self, mock_branch: MagicMock
     ) -> None:
@@ -1783,9 +1766,7 @@ class TestResolveGhRef:
             assert "PROJECT_ALIASES: myrepo\n" in content
             assert "PROJECT_NAME" not in content
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_repo_path_duplicate_basename_no_longer_conflicts(
         self, mock_branch: MagicMock
     ) -> None:
@@ -1807,9 +1788,7 @@ class TestResolveGhRef:
             assert "PROJECT_NAME: foo_1\n" in content
             assert "PROJECT_ALIASES" not in content
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_repo_path_suffixes_occupied_canonical_project_name(
         self, mock_branch: MagicMock
     ) -> None:
@@ -1830,9 +1809,7 @@ class TestResolveGhRef:
                 encoding="utf-8"
             )
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_repo_path_suffixes_case_variant_canonical_project_name(
         self, mock_branch: MagicMock
     ) -> None:
@@ -1850,9 +1827,7 @@ class TestResolveGhRef:
 
             assert result.project_name == "gh_alice__foo-2"
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_alias_resolves_to_canonical_ref_after_repo_path_first_use(
         self, mock_branch: MagicMock
     ) -> None:
@@ -1869,9 +1844,7 @@ class TestResolveGhRef:
             assert alias.primary_workspace_dir == first.primary_workspace_dir
             assert alias.canonical_ref == first.project_name
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_project_name_shorthand_resolves_canonical_project(
         self, mock_branch: MagicMock
     ) -> None:
@@ -1890,9 +1863,7 @@ class TestResolveGhRef:
             assert alias.primary_workspace_dir == canonical.primary_workspace_dir
             assert alias.canonical_ref == canonical.project_name
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_project_shorthand(self, mock_branch: MagicMock) -> None:
         with tempfile.TemporaryDirectory() as d:
             home = Path(d)
@@ -1910,9 +1881,7 @@ class TestResolveGhRef:
                 assert result.checkout_target == "origin/main"
                 assert result.canonical_ref is None
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_project_shorthand_legacy_gp_fallback(self, mock_branch: MagicMock) -> None:
         """Legacy ``.gp`` project spec is still resolvable when no ``.sase`` exists."""
         with tempfile.TemporaryDirectory() as d:
@@ -1931,10 +1900,8 @@ class TestResolveGhRef:
                 assert result.checkout_target == "origin/main"
                 assert result.canonical_ref is None
 
-    @patch(
-        "sase_github.workspace_plugin.get_default_branch", return_value="origin/main"
-    )
-    @patch("sase_github.workspace_plugin.find_all_patches")
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
+    @patch("sase_github.workspace.refs.find_all_patches")
     def test_patch_name(
         self,
         mock_find: MagicMock,
@@ -1953,7 +1920,7 @@ class TestResolveGhRef:
 
             # Need to fail mode 2 (project shorthand) first
             with patch(
-                "sase_github.workspace_plugin.Path.home",
+                "sase_github.workspace.projects.Path.home",
                 return_value=Path("/nonexistent"),
             ):
                 result = resolve_gh_ref("my-feature")
@@ -1961,7 +1928,7 @@ class TestResolveGhRef:
                 assert result.project_name == "proj"
                 assert result.canonical_ref is None
 
-    @patch("sase_github.workspace_plugin.find_all_patches")
+    @patch("sase_github.workspace.refs.find_all_patches")
     def test_patch_no_workspace_dir(self, mock_find: MagicMock) -> None:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".sase", delete=False) as f:
             f.write("NAME: my-feature\n")
@@ -1974,17 +1941,17 @@ class TestResolveGhRef:
             mock_find.return_value = [cs]
 
             with patch(
-                "sase_github.workspace_plugin.Path.home",
+                "sase_github.workspace.projects.Path.home",
                 return_value=Path("/nonexistent"),
             ):
                 with pytest.raises(ValueError, match="WORKSPACE_DIR is not set"):
                     resolve_gh_ref("my-feature")
             os.unlink(f.name)
 
-    @patch("sase_github.workspace_plugin.find_all_patches", return_value=[])
+    @patch("sase_github.workspace.refs.find_all_patches", return_value=[])
     def test_not_found(self, mock_find: MagicMock) -> None:
         with patch(
-            "sase_github.workspace_plugin.Path.home",
+            "sase_github.workspace.projects.Path.home",
             return_value=Path("/nonexistent"),
         ):
             with pytest.raises(ValueError, match="Cannot resolve"):
@@ -2005,7 +1972,7 @@ class TestPeekGhRef:
                 path_patch,
                 env_patch,
                 patch(
-                    "sase_github.workspace_plugin.subprocess.run",
+                    "subprocess.run",
                     side_effect=AssertionError("peek must not spawn subprocesses"),
                 ),
             ):
@@ -2025,7 +1992,7 @@ class TestPeekGhRef:
                 path_patch,
                 env_patch,
                 patch(
-                    "sase_github.workspace_plugin.subprocess.run",
+                    "subprocess.run",
                     side_effect=AssertionError("peek must not spawn subprocesses"),
                 ),
             ):
@@ -2041,7 +2008,7 @@ class TestPeekGhRef:
                 path_patch,
                 env_patch,
                 patch(
-                    "sase_github.workspace_plugin.subprocess.run",
+                    "subprocess.run",
                     side_effect=AssertionError("peek must not spawn subprocesses"),
                 ),
             ):

@@ -10,7 +10,7 @@ Covers:
 
 from unittest.mock import MagicMock, patch
 
-from sase_github.workspace_plugin import (
+from sase_github.workspace.submit import (
     _check_pr_state,
     _extract_pr_number,
 )
@@ -48,7 +48,7 @@ def test_extract_pr_number_no_match() -> None:
 # === _check_pr_state ===
 
 
-@patch("sase_github.workspace_plugin.subprocess.run")
+@patch("sase_github.workspace.submit.subprocess.run")
 def test_check_pr_state_open(mock_run: MagicMock) -> None:
     mock_run.return_value = MagicMock(returncode=0, stdout="OPEN\n", stderr="")
     assert _check_pr_state("42", "/ws") == "OPEN"
@@ -58,25 +58,25 @@ def test_check_pr_state_open(mock_run: MagicMock) -> None:
     assert "--json" in cmd
 
 
-@patch("sase_github.workspace_plugin.subprocess.run")
+@patch("sase_github.workspace.submit.subprocess.run")
 def test_check_pr_state_closed(mock_run: MagicMock) -> None:
     mock_run.return_value = MagicMock(returncode=0, stdout="CLOSED\n", stderr="")
     assert _check_pr_state("42", "/ws") == "CLOSED"
 
 
-@patch("sase_github.workspace_plugin.subprocess.run")
+@patch("sase_github.workspace.submit.subprocess.run")
 def test_check_pr_state_merged(mock_run: MagicMock) -> None:
     mock_run.return_value = MagicMock(returncode=0, stdout="MERGED\n", stderr="")
     assert _check_pr_state("42", "/ws") == "MERGED"
 
 
-@patch("sase_github.workspace_plugin.subprocess.run")
+@patch("sase_github.workspace.submit.subprocess.run")
 def test_check_pr_state_failure(mock_run: MagicMock) -> None:
     mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="not found")
     assert _check_pr_state("99", "/ws") is None
 
 
-@patch("sase_github.workspace_plugin.subprocess.run", side_effect=Exception("boom"))
+@patch("sase_github.workspace.submit.subprocess.run", side_effect=Exception("boom"))
 def test_check_pr_state_exception(mock_run: MagicMock) -> None:
     assert _check_pr_state("99", "/ws") is None
 
@@ -84,7 +84,7 @@ def test_check_pr_state_exception(mock_run: MagicMock) -> None:
 # === _submit_via_pr_merge with pr_number ===
 
 
-@patch("sase_github.workspace_plugin.subprocess.run")
+@patch("sase_github.workspace.submit.subprocess.run")
 @patch(
     "sase.workspace_provider.submission_utils.finalize_submission",
     return_value=(True, None),
@@ -95,7 +95,7 @@ def test_submit_via_pr_merge_uses_pr_number(
     mock_finalize: MagicMock,
     mock_run: MagicMock,
 ) -> None:
-    from sase_github.workspace_plugin import _submit_via_pr_merge
+    from sase_github.workspace.submit import _submit_via_pr_merge
 
     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
     cs = MagicMock()
@@ -112,7 +112,7 @@ def test_submit_via_pr_merge_uses_pr_number(
     assert cmd.index("42") < cmd.index("--merge")
 
 
-@patch("sase_github.workspace_plugin.subprocess.run")
+@patch("sase_github.workspace.submit.subprocess.run")
 @patch(
     "sase.workspace_provider.submission_utils.finalize_submission",
     return_value=(True, None),
@@ -123,7 +123,7 @@ def test_submit_via_pr_merge_without_pr_number(
     mock_finalize: MagicMock,
     mock_run: MagicMock,
 ) -> None:
-    from sase_github.workspace_plugin import _submit_via_pr_merge
+    from sase_github.workspace.submit import _submit_via_pr_merge
 
     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
     cs = MagicMock()

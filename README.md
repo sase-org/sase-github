@@ -148,7 +148,17 @@ virtual environment, such as an install-smoke environment.
 src/sase_github/
 ├── __init__.py              # Package exports
 ├── plugin.py                # GitHubPlugin VCS implementation
-├── workspace_plugin.py      # GitHubWorkspacePlugin workspace implementation
+├── workspace_plugin.py      # GitHubWorkspacePlugin workspace hooks (entry point)
+├── workspace/               # Implementation behind GitHubWorkspacePlugin
+│   ├── gh_cli.py            # Shared `gh` plumbing (env, error classifiers, timeout)
+│   ├── remotes.py           # Origin inspection, remote URLs, SSH→HTTPS clone
+│   ├── projects.py          # Home-rooted layout, project records, canonical naming
+│   ├── refs.py              # `#gh` ref resolution (resolve_gh_ref, peek_gh_ref)
+│   ├── completion.py        # Prompt completion (repo candidates, owner namespaces)
+│   ├── sdd_repo.py          # SDD sidecar repo identity and `gh` operations
+│   ├── sdd_sidecar.py       # SDD hook flows (preflight, create, materialize)
+│   ├── submit.py            # Patch submission (submit_patch, `gh pr merge`)
+│   └── mail.py              # Interactive mail prep (prepare_mail)
 ├── config.py                # GitHub config helpers (host and org/user lists)
 ├── scripts/
 │   ├── gh_setup.py                 # Setup step for #gh workflow

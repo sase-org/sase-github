@@ -34,9 +34,24 @@ Extends `GitCommon` from sase core. Handles low-level VCS operations by wrapping
 | `vcs_mail()`                | Pushes branch (`git push -u origin`) and creates PR if needed (`gh pr create --fill`) |
 | `vcs_create_pull_request()` | Creates a PR with an AI-generated title and body                                      |
 
-### GitHubWorkspacePlugin (`workspace_plugin.py`)
+### GitHubWorkspacePlugin (`workspace_plugin.py` + `workspace/`)
 
 Handles higher-level workflow orchestration. Implements workspace hooks for GitHub-hosted projects.
+`workspace_plugin.py` holds the `GitHubWorkspacePlugin` hookimpl class, which delegates the
+heavier hooks into the sibling `workspace/` subpackage:
+
+| Module                    | Owns                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| `workspace_plugin.py`     | `GitHubWorkspacePlugin` with every `@hookimpl`, plus `_HOSTED_URL_RE`            |
+| `workspace/gh_cli.py`     | Shared `gh` plumbing: `non_interactive_gh_env`, output classifiers, timeout      |
+| `workspace/remotes.py`    | Origin inspection, GitHub remote URLs, remote matching, SSH→HTTPS clone          |
+| `workspace/projects.py`   | Home-rooted layout, project-record lookup, canonical `gh_<owner>__<repo>` naming  |
+| `workspace/refs.py`       | `#gh` ref resolution: `resolve_gh_ref`, `peek_gh_ref`                            |
+| `workspace/completion.py` | Prompt completion: `gh repo list` candidates and local owner namespaces          |
+| `workspace/sdd_repo.py`   | SDD sidecar repo identity and `gh` operations on it                               |
+| `workspace/sdd_sidecar.py`| SDD hook flows: preflight, create-or-verify, and materialize                     |
+| `workspace/submit.py`     | Patch submission: `PR_URL_RE`, `submit_patch`, PR state checks, `gh pr merge`    |
+| `workspace/mail.py`       | Interactive mail prep (`prepare_mail`)                                           |
 
 **Hook implementations:**
 
@@ -71,7 +86,7 @@ branches. Other materialization callers omit the option and retain provider-owne
 
 ## Reference Resolution
 
-The `resolve_gh_ref()` function supports three dispatch modes for `#gh` references:
+The `resolve_gh_ref()` function in `sase_github/workspace/refs.py` supports three dispatch modes for `#gh` references:
 
 ### Mode 1: Repo Path (`user/project`)
 

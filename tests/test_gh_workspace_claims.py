@@ -778,13 +778,13 @@ class TestWsSubmitAtomicClaim:
                 return_value="gh",
             ),
             patch(
-                "sase_github.workspace_plugin.find_all_patches",
+                "sase_github.workspace.submit.find_all_patches",
                 return_value=[SimpleNamespace(name="feat-branch", pr_url=None)],
             ),
             patch("sase.ace.hooks.processes.kill_and_persist_all_running_processes"),
             patch("sase.ace.operations.has_active_children", return_value=False),
             patch(
-                "sase_github.workspace_plugin.parse_workspace_dir",
+                "sase_github.workspace.submit.parse_workspace_dir",
                 return_value="/work/widget/",
             ),
             patch(
@@ -825,13 +825,13 @@ class TestWsSubmitAtomicClaim:
                 return_value="gh",
             ),
             patch(
-                "sase_github.workspace_plugin.find_all_patches",
+                "sase_github.workspace.submit.find_all_patches",
                 return_value=[SimpleNamespace(name="feat-branch", pr_url=None)],
             ),
             patch("sase.ace.hooks.processes.kill_and_persist_all_running_processes"),
             patch("sase.ace.operations.has_active_children", return_value=False),
             patch(
-                "sase_github.workspace_plugin.parse_workspace_dir",
+                "sase_github.workspace.submit.parse_workspace_dir",
                 return_value="/work/widget/",
             ),
             patch(
@@ -863,13 +863,13 @@ class TestWsSubmitAtomicClaim:
                 return_value="gh",
             ),
             patch(
-                "sase_github.workspace_plugin.find_all_patches",
+                "sase_github.workspace.submit.find_all_patches",
                 return_value=[SimpleNamespace(name="feat-branch", pr_url=None)],
             ),
             patch("sase.ace.hooks.processes.kill_and_persist_all_running_processes"),
             patch("sase.ace.operations.has_active_children", return_value=False),
             patch(
-                "sase_github.workspace_plugin.parse_workspace_dir",
+                "sase_github.workspace.submit.parse_workspace_dir",
                 return_value="/work/widget/",
             ),
             patch(
@@ -917,13 +917,13 @@ class TestWsSubmitAtomicClaim:
                 return_value="gh",
             ),
             patch(
-                "sase_github.workspace_plugin.find_all_patches",
+                "sase_github.workspace.submit.find_all_patches",
                 return_value=[SimpleNamespace(name="feat-branch", pr_url=None)],
             ),
             patch("sase.ace.hooks.processes.kill_and_persist_all_running_processes"),
             patch("sase.ace.operations.has_active_children", return_value=False),
             patch(
-                "sase_github.workspace_plugin.parse_workspace_dir",
+                "sase_github.workspace.submit.parse_workspace_dir",
                 return_value="/work/widget/",
             ),
             patch(
