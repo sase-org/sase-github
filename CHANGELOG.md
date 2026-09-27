@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.17](https://github.com/sase-org/sase-github/compare/v0.2.16...v0.2.17) (2026-09-27)
+
+
+### Bug Fixes
+
+* **turn-rename:** reword require_tool_run refusal from agent shell to SASE agent ([1542750](https://github.com/sase-org/sase-github/commit/1542750dba468dc705e709d1c58191762aea8480))
+
 ## [0.2.16](https://github.com/sase-org/sase-github/compare/v0.2.15...v0.2.16) (2026-09-23)
 
 
