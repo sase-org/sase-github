@@ -21,6 +21,7 @@ from sase_github.workspace.sdd_repo import (
     ensure_github_sdd_label,
     probe_github_repo_detail,
     sdd_sidecar_suffix,
+    sdd_sidecar_visibility,
     sidecar_sdd_candidates,
 )
 
@@ -31,6 +32,7 @@ def preflight_sdd_sidecar(
     primary_workspace_dir: str, options: dict[str, object]
 ) -> SddSidecarPreflight | None:
     """Authoritatively discover a sidecar without mutating state."""
+    visibility = sdd_sidecar_visibility(options)
     origin = read_github_origin(primary_workspace_dir)
     if origin is None:
         return None
@@ -52,7 +54,7 @@ def preflight_sdd_sidecar(
                 provider="GitHub",
                 host=origin.host,
                 repo=f"{origin.owner}/{origin.repo}--{suffix}",
-                visibility="public",
+                visibility=visibility,
                 message="GitHub sidecar discovery returned no result",
             )
         owner, repo, probe, message = candidate
@@ -64,7 +66,7 @@ def preflight_sdd_sidecar(
         provider="GitHub",
         host=host,
         repo=repo_full_name,
-        visibility="public",
+        visibility=visibility,
         message=message or "",
     )
 
@@ -73,6 +75,7 @@ def create_sdd_remote(
     primary_workspace_dir: str, options: dict[str, object]
 ) -> dict[str, object] | None:
     """Verify or create a GitHub sidecar SDD repository."""
+    visibility = sdd_sidecar_visibility(options)
     origin = read_github_origin(primary_workspace_dir)
     if origin is None:
         return None
@@ -99,6 +102,7 @@ def create_sdd_remote(
                 repo_full_name,
                 source_repo_full_name=f"{origin.owner}/{origin.repo}",
                 sidecar_suffix=suffix,
+                visibility=visibility,
             )
             ensure_github_sdd_label(host, repo_full_name)
             return _sdd_store_record(
@@ -137,6 +141,7 @@ def create_sdd_remote(
             repo_full_name,
             source_repo_full_name=f"{origin.owner}/{origin.repo}",
             sidecar_suffix=suffix,
+            visibility=visibility,
         )
         ensure_github_sdd_label(origin.host, repo_full_name)
         return _sdd_store_record(

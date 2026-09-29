@@ -81,7 +81,7 @@ adoption, and the durable primary-workspace record.
 The explicit initializer calls `ws_preflight_sdd_sidecar()` before materialization. This hook may run `gh repo view`
 but never creates or labels a repository, clones, or writes local state. Core then includes a per-invocation creation
 authorization in materialization options: `False` after a found result and `True` only after the user answers `y` or
-`yes` for a missing public sidecar. The provider checks this option immediately before both repository-creation
+`yes` for a missing sidecar. Sidecars are created with the configured `repos.sidecar.*.visibility` (default public). The provider checks this option immediately before both repository-creation
 branches. Other materialization callers omit the option and retain provider-owned behavior.
 
 ## Reference Resolution

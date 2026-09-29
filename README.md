@@ -103,8 +103,8 @@ itself with sase core:
 
 When sase detects a repository whose remote origin host is in the configured GitHub host set, it automatically loads
 `GitHubPlugin` and `GitHubWorkspacePlugin` to handle VCS operations and provider-owned SDD storage. The first `#gh` or
-For managed projects, `sase sdd init` finds or creates the public `<owner>/<repo>--plans` and `<owner>/<repo>--research`
-sidecars and returns their provider metadata to SASE core. The same hooks retain `<owner>/<repo>--sdd` discovery for
+For managed projects, `sase sdd init` finds or creates the `<owner>/<repo>--plans` and `<owner>/<repo>--research`
+sidecars with the configured `repos.sidecar.*.visibility` (default public) and returns their provider metadata to SASE core. The same hooks retain `<owner>/<repo>--sdd` discovery for
 legacy stores. Authentication, permission, network, repository creation, labeling, clone, or initial-push failures stop
 setup; there is no GitHub-local SDD fallback.
 

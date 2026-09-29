@@ -98,7 +98,7 @@ Currently the default config defines:
 
 ## SDD sidecar repository
 
-Managed projects use public `<owner>/<repo>--plans` and `<owner>/<repo>--research` sidecars. The legacy
+Managed projects use `<owner>/<repo>--plans` and `<owner>/<repo>--research` sidecars, created with the configured `repos.sidecar.*.visibility` (default public). The legacy
 `<owner>/<repo>--sdd` candidate and the `sdd.repo.name` override remain supported for unmigrated stores. `sase sdd init`
 fails closed if discovery, creation, labeling, cloning, or the initial push fails. Fix `gh auth status`, repository
 permissions, or network access and retry; SASE does not switch GitHub projects to a local store.

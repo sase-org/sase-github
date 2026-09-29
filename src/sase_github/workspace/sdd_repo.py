@@ -54,6 +54,24 @@ def sdd_sidecar_suffix(options: Mapping[str, object]) -> str:
     return _validate_sdd_sidecar_suffix(raw)
 
 
+def sdd_sidecar_visibility(options: Mapping[str, object]) -> str:
+    raw = options.get("sdd_visibility", "public")
+    if raw is None:
+        return "public"
+    if not isinstance(raw, str):
+        raise RuntimeError(
+            f"unsupported SDD sidecar visibility: {raw!r}; expected public or private"
+        )
+    normalized = raw.strip().casefold()
+    if not normalized:
+        return "public"
+    if normalized in ("public", "private"):
+        return normalized
+    raise RuntimeError(
+        f"unsupported SDD sidecar visibility: {raw!r}; expected public or private"
+    )
+
+
 def _validate_sdd_sidecar_suffix(suffix: str) -> str:
     normalized = suffix.strip().removeprefix("--")
     if not normalized or re.fullmatch(r"[a-z0-9][a-z0-9-]*", normalized) is None:
@@ -152,6 +170,7 @@ def create_github_sdd_repo(
     *,
     source_repo_full_name: str,
     sidecar_suffix: str = "sdd",
+    visibility: str = "public",
 ) -> bool:
     env = non_interactive_gh_env()
     env["GH_HOST"] = host
@@ -162,7 +181,7 @@ def create_github_sdd_repo(
                 "repo",
                 "create",
                 repo_full_name,
-                "--public",
+                f"--{visibility}",
                 "--description",
                 _sdd_sidecar_description(
                     source_repo_full_name, sidecar_suffix=sidecar_suffix

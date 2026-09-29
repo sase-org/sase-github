@@ -1254,6 +1254,232 @@ class TestSddMaterialization:
         ] in calls
         assert _sdd_label_create_cmd(repo) in calls
 
+    def test_create_sdd_remote_creates_private_split_sidecar(
+        self, tmp_path: Path
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        calls: list[list[str]] = []
+
+        def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(returncode=1, stderr="repository not found")
+            if cmd[:3] in (["gh", "repo", "create"], ["gh", "label", "create"]):
+                return _completed()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_create_sdd_remote(
+                str(primary),
+                str(primary),
+                {
+                    "create": True,
+                    "sdd_creation_authorized": True,
+                    "sdd_sidecar_suffix": "attachments-private",
+                    "sdd_visibility": "private",
+                },
+            )
+
+        repo = "acme/widget--attachments-private"
+        assert record is not None
+        assert record["repo"] == repo
+        assert record["created"] is True
+        assert [
+            "gh",
+            "repo",
+            "create",
+            repo,
+            "--private",
+            "--description",
+            "SASE attachments-private sidecar repository for acme/widget",
+        ] in calls
+        assert _sdd_label_create_cmd(repo) in calls
+        assert all("--public" not in cmd for cmd in calls)
+
+    def test_create_sdd_remote_creates_private_exact_sdd_repo(
+        self, tmp_path: Path
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        calls: list[list[str]] = []
+
+        def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(returncode=1, stderr="repository not found")
+            if cmd[:3] in (["gh", "repo", "create"], ["gh", "label", "create"]):
+                return _completed()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_create_sdd_remote(
+                str(primary),
+                str(primary),
+                {
+                    "create": True,
+                    "sdd_creation_authorized": True,
+                    "sdd_repo": "other/custom-sdd",
+                    "sdd_visibility": "private",
+                },
+            )
+
+        assert record is not None
+        assert record["repo"] == "other/custom-sdd"
+        assert record["created"] is True
+        create_cmds = [cmd for cmd in calls if cmd[:3] == ["gh", "repo", "create"]]
+        assert len(create_cmds) == 1
+        assert create_cmds[0][3] == "other/custom-sdd"
+        assert "--private" in create_cmds[0]
+        assert "--public" not in create_cmds[0]
+        assert all("--public" not in cmd for cmd in calls)
+
+    @pytest.mark.parametrize("visibility", ["public", "PRIVATE", " private "])
+    def test_create_sdd_remote_public_and_normalized_visibility(
+        self, tmp_path: Path, visibility: str
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        calls: list[list[str]] = []
+
+        def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(returncode=1, stderr="repository not found")
+            if cmd[:3] in (["gh", "repo", "create"], ["gh", "label", "create"]):
+                return _completed()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        expected_flag = (
+            "--private" if visibility.strip().casefold() == "private" else "--public"
+        )
+        other_flag = "--public" if expected_flag == "--private" else "--private"
+        with patch("subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_create_sdd_remote(
+                str(primary),
+                str(primary),
+                {
+                    "create": True,
+                    "sdd_creation_authorized": True,
+                    "sdd_visibility": visibility,
+                },
+            )
+
+        assert record is not None
+        create_cmds = [cmd for cmd in calls if cmd[:3] == ["gh", "repo", "create"]]
+        assert len(create_cmds) == 1
+        assert expected_flag in create_cmds[0]
+        assert all(other_flag not in cmd for cmd in calls)
+
+    def test_create_sdd_remote_normalizes_uppercase_private(
+        self, tmp_path: Path
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        calls: list[list[str]] = []
+
+        def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            calls.append(cmd)
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(returncode=1, stderr="repository not found")
+            if cmd[:3] in (["gh", "repo", "create"], ["gh", "label", "create"]):
+                return _completed()
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("subprocess.run", side_effect=run):
+            record = GitHubWorkspacePlugin().ws_create_sdd_remote(
+                str(primary),
+                str(primary),
+                {
+                    "create": True,
+                    "sdd_creation_authorized": True,
+                    "sdd_visibility": "PRIVATE",
+                },
+            )
+
+        assert record is not None
+        create_cmds = [cmd for cmd in calls if cmd[:3] == ["gh", "repo", "create"]]
+        assert len(create_cmds) == 1
+        assert "--private" in create_cmds[0]
+        assert all("--public" not in cmd for cmd in calls)
+
+    @pytest.mark.parametrize("bad_visibility", ["internal", 123, "", None])
+    def test_create_sdd_remote_rejects_invalid_visibility_without_subprocess(
+        self, tmp_path: Path, bad_visibility: object
+    ) -> None:
+        from sase_github.workspace.sdd_repo import sdd_sidecar_visibility
+
+        primary = tmp_path / "widget"
+        primary.mkdir()
+        if bad_visibility in ("", None):
+            assert (
+                sdd_sidecar_visibility({"sdd_visibility": bad_visibility}) == "public"
+            )
+            return
+        with patch("subprocess.run") as mock_run:
+            with pytest.raises(
+                RuntimeError, match="unsupported SDD sidecar visibility"
+            ):
+                GitHubWorkspacePlugin().ws_create_sdd_remote(
+                    str(primary),
+                    str(primary),
+                    {
+                        "create": True,
+                        "sdd_creation_authorized": True,
+                        "sdd_visibility": bad_visibility,
+                    },
+                )
+            mock_run.assert_not_called()
+        with patch("subprocess.run") as mock_run:
+            with pytest.raises(
+                RuntimeError, match="unsupported SDD sidecar visibility"
+            ):
+                GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
+                    str(primary),
+                    str(primary),
+                    {"sdd_visibility": bad_visibility},
+                )
+            mock_run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("stderr", "expected_status"),
+        [
+            ("repository not found", "not_found"),
+            ("authentication required", "unavailable"),
+        ],
+    )
+    def test_preflight_reports_private_visibility(
+        self, tmp_path: Path, stderr: str, expected_status: str
+    ) -> None:
+        primary = tmp_path / "widget"
+        primary.mkdir()
+
+        def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "config", "--get", "remote.origin.url"]:
+                return _completed(stdout="https://github.com/acme/widget.git\n")
+            if cmd[:3] == ["gh", "repo", "view"]:
+                return _completed(returncode=1, stderr=stderr)
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        with patch("subprocess.run", side_effect=run):
+            result = GitHubWorkspacePlugin().ws_preflight_sdd_sidecar(
+                str(primary),
+                str(primary),
+                {"sdd_visibility": "private"},
+            )
+
+        assert result is not None
+        assert result.status == expected_status
+        assert result.visibility == "private"
+
     def test_create_sdd_remote_adopts_repo_when_create_reports_existing(
         self, tmp_path: Path
     ) -> None:
