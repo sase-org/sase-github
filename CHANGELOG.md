@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.18](https://github.com/sase-org/sase-github/compare/v0.2.17...v0.2.18) (2026-09-29)
+
+
+### Features
+
+* **sdd:** honor sdd_visibility for private sidecar creation and preflight ([cad2d43](https://github.com/sase-org/sase-github/commit/cad2d4317f351f1804c82681271916759bb361cf))
+
 ## [0.2.17](https://github.com/sase-org/sase-github/compare/v0.2.16...v0.2.17) (2026-09-27)
 
 
