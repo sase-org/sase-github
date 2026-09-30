@@ -108,6 +108,21 @@ requires its own `y` or `yes` response at a default-no prompt naming visibility,
 stdin and bare `sase init --yes` cannot grant it. A sidecar found during preflight receives no creation authorization,
 so if it disappears before materialization the provider stops instead of silently recreating it.
 
+### Secret scanning on new public sidecars
+
+Pass the `sdd_secret_scanning` provider option with a literal `True` value when creating a sidecar whose contents
+should be guarded by GitHub secret scanning. Right after `gh repo create` succeeds for a newly created **public**
+repository, sase-github runs:
+
+```bash
+echo '{"security_and_analysis":{"secret_scanning":{"status":"enabled"},"secret_scanning_push_protection":{"status":"enabled"}}}' \
+  | gh api -X PATCH repos/<owner>/<repo> --input -
+```
+
+The step is best effort: on failure sase-github warns on stderr with the manual command above and creation still
+succeeds. Private repositories and adopted (`found`) repositories are never touched. Any other value for the option
+— including truthy strings such as `"true"` — leaves secret scanning unchanged.
+
 ## Workspace Layout
 
 Primary GitHub workspaces are stored under `~/projects/github/<user>/<project>/` when first resolved from a

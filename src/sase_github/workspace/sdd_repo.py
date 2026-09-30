@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -70,6 +71,76 @@ def sdd_sidecar_visibility(options: Mapping[str, object]) -> str:
     raise RuntimeError(
         f"unsupported SDD sidecar visibility: {raw!r}; expected public or private"
     )
+
+
+def sdd_secret_scanning(options: Mapping[str, object]) -> bool:
+    """Return True only when the caller explicitly opts into secret scanning.
+
+    Only a literal ``True`` enables it; any other value (including truthy
+    strings such as ``"true"``) is False so a stray config value can never
+    turn on repository mutations.
+    """
+    return options.get("sdd_secret_scanning") is True
+
+
+_SECRET_SCANNING_API_PAYLOAD = {
+    "security_and_analysis": {
+        "secret_scanning": {"status": "enabled"},
+        "secret_scanning_push_protection": {"status": "enabled"},
+    }
+}
+
+
+def secret_scanning_manual_command(repo_full_name: str) -> str:
+    payload = json.dumps(_SECRET_SCANNING_API_PAYLOAD, separators=(",", ":"))
+    return f"echo '{payload}' | gh api -X PATCH repos/{repo_full_name} --input -"
+
+
+def ensure_github_secret_scanning(host: str, repo_full_name: str) -> bool:
+    """Best-effort enablement of secret scanning and push protection.
+
+    Returns True when the PATCH succeeded. On any failure, warns on stderr
+    with the manual command and returns False; creation must never fail
+    because of this backstop step.
+    """
+    env = non_interactive_gh_env()
+    env["GH_HOST"] = host
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "-X",
+                "PATCH",
+                f"repos/{repo_full_name}",
+                "--input",
+                "-",
+            ],
+            input=json.dumps(_SECRET_SCANNING_API_PAYLOAD),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_sdd_network_timeout(),
+            env=env,
+            stdin=None,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        print(
+            f"warning: could not enable secret scanning on {repo_full_name}: "
+            f"{exc}. Run manually: "
+            f"{secret_scanning_manual_command(repo_full_name)}",
+            file=sys.stderr,
+        )
+        return False
+    if result.returncode == 0:
+        return True
+    detail = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
+    message = f"warning: could not enable secret scanning on {repo_full_name}"
+    if detail:
+        message += f": {detail}"
+    message += ". Run manually: " + secret_scanning_manual_command(repo_full_name)
+    print(message, file=sys.stderr)
+    return False
 
 
 def _validate_sdd_sidecar_suffix(suffix: str) -> str:

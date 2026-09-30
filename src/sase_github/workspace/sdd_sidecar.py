@@ -19,7 +19,9 @@ from sase_github.workspace.sdd_repo import (
     SddRepoProbe,
     create_github_sdd_repo,
     ensure_github_sdd_label,
+    ensure_github_secret_scanning,
     probe_github_repo_detail,
+    sdd_secret_scanning,
     sdd_sidecar_suffix,
     sdd_sidecar_visibility,
     sidecar_sdd_candidates,
@@ -104,6 +106,9 @@ def create_sdd_remote(
                 sidecar_suffix=suffix,
                 visibility=visibility,
             )
+            _maybe_enable_secret_scanning(
+                host, repo_full_name, visibility, options, created
+            )
             ensure_github_sdd_label(host, repo_full_name)
             return _sdd_store_record(
                 host,
@@ -142,6 +147,9 @@ def create_sdd_remote(
             source_repo_full_name=f"{origin.owner}/{origin.repo}",
             sidecar_suffix=suffix,
             visibility=visibility,
+        )
+        _maybe_enable_secret_scanning(
+            origin.host, repo_full_name, visibility, options, created
         )
         ensure_github_sdd_label(origin.host, repo_full_name)
         return _sdd_store_record(
@@ -251,6 +259,29 @@ def _discover_sidecar_sdd_repo_for_create(
         if probe != "not_found":
             return owner, repo, probe, unavailable_message
     return primary[0], primary[1], "not_found", None
+
+
+def _maybe_enable_secret_scanning(
+    host: str,
+    repo_full_name: str,
+    visibility: str,
+    options: Mapping[str, object],
+    created: bool,
+) -> None:
+    """Best-effort secret scanning backstop for newly created public repos.
+
+    Runs only when this call created a public repo with the
+    ``sdd_secret_scanning`` option set. Private repos and adopted (found)
+    repos are untouched. Failures only warn inside
+    ``ensure_github_secret_scanning`` and never fail creation.
+    """
+    if not created:
+        return
+    if visibility != "public":
+        return
+    if not sdd_secret_scanning(options):
+        return
+    ensure_github_secret_scanning(host, repo_full_name)
 
 
 def _require_sdd_creation_authorization(
