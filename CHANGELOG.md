@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.19](https://github.com/sase-org/sase-github/compare/v0.2.18...v0.2.19) (2026-09-30)
+
+
+### Features
+
+* **sdd:** enable secret scanning on newly created public sidecars ([7288df7](https://github.com/sase-org/sase-github/commit/7288df7c0e401839ce2f96a684839c131b0d454a))
+
 ## [0.2.18](https://github.com/sase-org/sase-github/compare/v0.2.17...v0.2.18) (2026-09-29)
 
 
