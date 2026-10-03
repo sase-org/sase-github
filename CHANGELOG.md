@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.20](https://github.com/sase-org/sase-github/compare/v0.2.19...v0.2.20) (2026-10-03)
+
+
+### Features
+
+* **macros:** register sase_macros entry points and rename docs to macros ([9d8a305](https://github.com/sase-org/sase-github/commit/9d8a305edbf123cee7385729c9209322cf47263d))
+
 ## [0.2.19](https://github.com/sase-org/sase-github/compare/v0.2.18...v0.2.19) (2026-09-30)
 
 
