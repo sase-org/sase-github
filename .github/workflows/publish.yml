@@ -103,6 +103,7 @@ jobs:
                   "github": "sase_github.workspace_plugin:GitHubWorkspacePlugin"
               },
               "sase_config": {"sase_github": "sase_github"},
+              "sase_macros": {"sase_github": "sase_github"},
               "sase_xprompts": {"sase_github": "sase_github"},
           }
 

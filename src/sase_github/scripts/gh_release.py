@@ -1,4 +1,4 @@
-"""Release step for the #gh xprompt workflow."""
+"""Release step for the #gh macro workflow."""
 
 from sase.workspace_provider.vcs_release import VcsReleaseResult, release_vcs_workspace
 

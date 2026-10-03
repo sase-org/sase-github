@@ -1,4 +1,4 @@
-"""Setup step for the #gh xprompt workflow."""
+"""Setup step for the #gh macro workflow."""
 
 import os
 import subprocess

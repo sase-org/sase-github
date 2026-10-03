@@ -1,4 +1,4 @@
-"""Get context step for the #new_pr_desc xprompt workflow."""
+"""Get context step for the #new_pr_desc macro workflow."""
 
 import os
 import subprocess

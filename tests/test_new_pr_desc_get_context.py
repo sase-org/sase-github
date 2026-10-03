@@ -1,4 +1,4 @@
-"""Tests for the #new_pr_desc xprompt's get-context script."""
+"""Tests for the #new_pr_desc macro's get-context script."""
 
 from pathlib import Path
 from types import SimpleNamespace

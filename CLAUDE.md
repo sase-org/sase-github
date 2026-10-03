@@ -2,7 +2,7 @@
 
 ## Overview
 GitHub VCS plugin for sase. Provides GitHubPlugin (PR creation, gh CLI integration)
-and GitHub-related xprompts (#gh, #new_pr_desc).
+and GitHub-related macros (#gh, #new_pr_desc).
 
 ## Build & Run
 ```bash
@@ -17,7 +17,7 @@ just check      # lint + test
 - `src/sase_github/plugin.py` — GitHubPlugin class (extends `sase.vcs_provider.plugins._git_common.GitCommon`)
 - `src/sase_github/workspace_plugin.py` — GitHubWorkspacePlugin hook entry point; implementation lives in the sibling `src/sase_github/workspace/` package (`gh_cli`, `remotes`, `projects`, `refs`, `completion`, `sdd_repo`, `sdd_sidecar`, `submit`, `mail`)
 - `src/sase_github/task_types.py` — agent-uncreatable `github` task type via `sase_task_types`
-- `src/sase_github/xprompts/` — GitHub workflow YAML files discovered via `sase_xprompts` entry point
+- `src/sase_github/xprompts/` — GitHub workflow YAML files discovered via the `sase_macros` entry point (`sase_xprompts` stays registered as a legacy alias)
 - Depends on `sase>=0.1.3` for base classes, hookspec, and script modules
 
 ## Code Conventions

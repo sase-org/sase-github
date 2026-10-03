@@ -83,9 +83,10 @@ not run `gh` or contact GitHub until you accept an owner and ask for repository 
 sase-github contributes a `default_config.yml` via the `sase_config` entry point. This is merged into the sase config
 chain between sase core defaults and your user config.
 
-Currently the default config defines:
-
-- `xprompts.pr_diff` — an xprompt that expands to the diff of the current PR's changes
+Currently the default config is empty (`{}`): it contributes no keys. The `sase_config`
+entry point keeps the file in the config chain so future defaults have a home.
+(The retired `xprompts.pr_diff` key is gone; its logic lives in the packaged `#prdd`
+macro instead.)
 
 ## Requirements
 

@@ -10,7 +10,7 @@
 **sase-github** is a plugin for [sase](https://github.com/sase-org/sase) that adds GitHub-specific VCS and workspace
 support. It provides the `GitHubPlugin` VCS provider and `GitHubWorkspacePlugin` workspace provider for repositories
 hosted on `github.com` or configured GitHub Enterprise hosts, integrating with the `gh` CLI for pull request creation,
-management, and submission, along with GitHub-specific xprompt workflows.
+management, and submission, along with GitHub-specific macro workflows.
 
 ## Installation
 
@@ -80,9 +80,9 @@ Requires `sase>=0.11.0` as a dependency. For GitHub Enterprise Server or self-ho
 
 - **`github`** — Agent-uncreatable task type registered through the `sase_task_types` entry point. Beads of this type are created by SASE's external issue mirror, not by agents.
 
-### XPrompts
+### Macros
 
-| XPrompt        | Description                                                                        |
+| Macro          | Description                                                                        |
 | -------------- | ---------------------------------------------------------------------------------- |
 | `#gh`          | GitHub workflow orchestration — resolves refs, claims workspaces, manages branches |
 | `#new_pr_desc` | AI-generated PR descriptions from commit diffs                                     |
@@ -99,7 +99,7 @@ itself with sase core:
 
 - **`sase_vcs`** — Registers `GitHubPlugin` as the `github` VCS provider
 - **`sase_workspace`** — Registers `GitHubWorkspacePlugin` as the `github` workspace provider
-- **`sase_xprompts`** — Makes GitHub xprompts discoverable via plugin discovery
+- **`sase_macros`** — Makes GitHub macros discoverable via plugin discovery (`sase_xprompts` stays registered as a legacy alias)
 
 When sase detects a repository whose remote origin host is in the configured GitHub host set, it automatically loads
 `GitHubPlugin` and `GitHubWorkspacePlugin` to handle VCS operations and provider-owned SDD storage. The first `#gh` or

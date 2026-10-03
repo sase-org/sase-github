@@ -12,7 +12,7 @@ Registered in `pyproject.toml`:
 | --------------------------- | ----------------------- | --------------------------------------------------------------- |
 | `sase_vcs:github`           | `GitHubPlugin`          | VCS operations (push, PR creation, PR info)                     |
 | `sase_workspace:github`     | `GitHubWorkspacePlugin` | Workspace orchestration (ref resolution, submission, mail prep) |
-| `sase_xprompts:sase_github` | —                       | Makes `#gh`, `#new_pr_desc`, `#prdd` xprompts discoverable      |
+| `sase_macros:sase_github` | —                       | Makes `#gh`, `#new_pr_desc`, `#prdd` macros discoverable (`sase_xprompts` stays registered as a legacy alias) |
 | `sase_config:sase_github`   | —                       | Contributes `default_config.yml` to the sase config chain       |
 | `sase_task_types:github`    | `GITHUB_TASK_TYPES`     | Agent-uncreatable `github` task type for mirrored issues        |
 

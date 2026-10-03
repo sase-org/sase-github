@@ -1,6 +1,6 @@
-# XPrompts
+# Macros
 
-sase-github provides three xprompts for GitHub-specific workflows.
+sase-github provides three macros for GitHub-specific workflows.
 
 ## `#gh` — GitHub Workflow
 
@@ -97,5 +97,5 @@ branch (not `master` or `main`).
    - `#pr_diff` — the diff of changes made by the current PR
    - The current PR description (fetched via `gh pr view --json body`)
 
-This xprompt is typically used as a tag rather than invoked directly — it's automatically appended when the
+This macro is typically used as a tag rather than invoked directly — it's automatically appended when the
 `append_to_commit_and_propose` tag is active.
