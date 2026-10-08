@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.21](https://github.com/sase-org/sase-github/compare/v0.2.20...v0.2.21) (2026-10-08)
+
+
+### Features
+
+* **install:** rename venv recipe to install-venv with private install alias ([69e1b0a](https://github.com/sase-org/sase-github/commit/69e1b0a9e83f4a7d27fdcbe0ddac74a2e2570e32))
+
 ## [0.2.20](https://github.com/sase-org/sase-github/compare/v0.2.19...v0.2.20) (2026-10-03)
 
 
