@@ -43,7 +43,7 @@ jobs:
           uv python install 3.12
           uv venv --python 3.12 .venv
       - name: Install dependencies
-        run: just install
+        run: just install-venv
       - name: Lint
         run: just lint
 
@@ -77,6 +77,6 @@ jobs:
           uv python install ${{ matrix.python-version }}
           uv venv --python ${{ matrix.python-version }} .venv
       - name: Install dependencies
-        run: just install
+        run: just install-venv
       - name: Run tests
         run: just test

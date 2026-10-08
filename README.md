@@ -127,7 +127,7 @@ Enterprise setup flow.
 ## Development
 
 ```bash
-just install    # Install in editable mode with dev deps
+just install-venv    # Install in editable mode with dev deps
 just fmt        # Auto-format code
 just lint       # Run ruff + mypy
 just test       # Run tests

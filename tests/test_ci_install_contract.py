@@ -19,7 +19,8 @@ def test_ci_builds_coordinated_sase_sources() -> None:
     assert 'python-version: ["3.12", "3.13"]' in workflow
     assert "uv venv --python 3.12 .venv" in workflow
     assert "uv venv --python ${{ matrix.python-version }} .venv" in workflow
-    assert workflow.count("run: just install") == 2
+    assert workflow.count("run: just install-venv") == 2
+    assert "run: just install\n" not in workflow
 
 
 def test_task_runner_requires_both_source_overrides() -> None:
@@ -37,6 +38,9 @@ def test_task_runner_requires_both_source_overrides() -> None:
     assert 'just install-source-sase "$venv_path/bin/python"' in justfile
     assert 'uv pip install --python {{ venv_bin }}/python -e ".[dev]"' in justfile
     assert "SASE_CORE_PATH" not in justfile
+    assert "install-venv:" in justfile
+    assert "[group('install')]" in justfile
+    assert "`just install` is now `just install-venv`" in justfile
 
 
 def test_release_smoke_builds_coordinated_sase_sources() -> None:

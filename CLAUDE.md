@@ -6,7 +6,7 @@ and GitHub-related macros (#gh, #new_pr_desc).
 
 ## Build & Run
 ```bash
-just install    # Install in editable mode with dev deps
+just install-venv    # Install in editable mode with dev deps
 just lint       # ruff + mypy
 just fmt        # Auto-format
 just test       # pytest

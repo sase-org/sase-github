@@ -7,7 +7,7 @@ default:
     @just --list
 
 _setup:
-    @[ -x {{ venv_bin }}/python ] || (uv venv {{ venv_dir }} && just install)
+    @[ -x {{ venv_bin }}/python ] || (uv venv {{ venv_dir }} && just install-venv)
 
 install-source-sase python:
     @set -eu; \
@@ -33,7 +33,9 @@ install-source-sase python:
     ); \
     uv pip install --python "$python_path" --no-deps -e "$sase_python_path"
 
-install:
+[group('install')]
+[doc("Set up this checkout's .venv for tests and lint")]
+install-venv:
     @[ -x {{ venv_bin }}/python ] || uv venv {{ venv_dir }}
     @set -eu; \
     sase_python_path="${SASE_PYTHON_PATH:-}"; \
@@ -53,6 +55,12 @@ install:
             --overrides "$venv_path/sase-overrides.txt" -e ".[dev]"; \
         just install-source-sase "$venv_path/bin/python"; \
     fi
+
+# Private alias kept for one release; remove after the next release.
+[private]
+install:
+    @echo '`just install` is now `just install-venv`' >&2
+    @just install-venv
 
 lint: _setup
     {{ venv_bin }}/ruff check src/ tests/
