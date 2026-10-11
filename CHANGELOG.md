@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.22](https://github.com/sase-org/sase-github/compare/v0.2.21...v0.2.22) (2026-10-11)
+
+
+### Bug Fixes
+
+* **sase-github:** bound git clone with timeout, honor SASE_HOME, narrow host detection, fix github_orgs docs ([ad4827c](https://github.com/sase-org/sase-github/commit/ad4827c5e97ece193a715cbd4d4933989e0e8d0b))
+
 ## [0.2.21](https://github.com/sase-org/sase-github/compare/v0.2.20...v0.2.21) (2026-10-08)
 
 
