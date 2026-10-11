@@ -85,6 +85,15 @@ class GitHubWorkspacePlugin:
                     ("http://", "https://", "git@", "ssh://")
                 ):
                     return None  # local path → bare-git
+                if url:
+                    from sase_github.config import (
+                        get_github_hosts,
+                        parse_github_remote_url,
+                    )
+
+                    parsed = parse_github_remote_url(url)
+                    if parsed is None or parsed.host not in get_github_hosts():
+                        return None
         except Exception:
             pass
 

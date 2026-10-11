@@ -14,7 +14,9 @@ if TYPE_CHECKING:
 
 
 def projects_base() -> Path:
-    return Path.home() / ".sase" / "projects"
+    from sase.core.paths import sase_projects_dir
+
+    return sase_projects_dir()
 
 
 def github_workspace_dir(user: str, project: str, host: str | None = None) -> str:

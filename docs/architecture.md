@@ -94,7 +94,7 @@ When the ref contains `/`, it's treated as a GitHub repo path:
 
 - Derives workspace from `~/projects/github/<user>/<project>/` for `github.com`, or
   `~/projects/github/<host>/<user>/<project>/` for other default hosts
-- Clones the repo from the default GitHub host if it doesn't exist (SSH for orgs in `github_orgs`, HTTPS otherwise)
+- Clones the repo from the default GitHub host if it doesn't exist (always tries SSH first, then falls back to HTTPS)
 - Reuses an existing SASE ProjectSpec whose normalized `WORKSPACE_DIR` already points at that workspace
 - Otherwise creates a canonical project name from the repo identity, normally `gh_<user>__<project>`
 - Adds a deterministic suffix such as `-2` only if that canonical project name is already occupied by a different
@@ -153,4 +153,5 @@ When submitting a GitHub Patch (`ws_submit`):
 
 `config.py` provides `get_github_hosts()` and `get_default_github_host()` for host matching and bare `#gh(owner/repo)`
 clone refs. Configured hosts are normalized, and `github.com` is always included implicitly. It also provides
-`get_github_orgs()`, which determines whether repos are cloned via SSH (for orgs the user has push access to) or HTTPS.
+`get_github_orgs()`, which seeds `#gh:` owner completion and gates PR submission. It does not affect clone transport:
+cloning always tries SSH first, then falls back to HTTPS.

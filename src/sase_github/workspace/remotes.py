@@ -10,8 +10,29 @@ from typing import TYPE_CHECKING
 
 from sase.workspace_provider.utils import non_interactive_git_env
 
+#: Override for the `git clone` timeout, in seconds.
+ENV_CLONE_TIMEOUT = "SASE_GITHUB_CLONE_TIMEOUT"
+
+#: Generous default `git clone` timeout, sized for a full clone.
+DEFAULT_CLONE_TIMEOUT_SECONDS = 600.0
+
 if TYPE_CHECKING:
     from sase_github.config import GitHubRemote
+
+
+def clone_git_timeout() -> float:
+    """Return the timeout for `git clone` of a full repo, in seconds."""
+    from sase.sdd._git import network_git_timeout
+
+    raw = os.environ.get(ENV_CLONE_TIMEOUT, "").strip()
+    if raw:
+        try:
+            override = float(raw)
+        except ValueError:
+            override = -1.0
+        if override > 0:
+            return override
+    return max(DEFAULT_CLONE_TIMEOUT_SECONDS, network_git_timeout())
 
 
 def read_github_origin(workspace_dir: str) -> GitHubRemote | None:
@@ -69,11 +90,13 @@ def clone_gh_repo(
     target_dir: str,
     *,
     host: str | None = None,
+    timeout: float | None = None,
 ) -> str:
     """Clone a GitHub repo to the target directory."""
     from sase_github.config import get_default_github_host
 
     github_host = host or get_default_github_host()
+    timeout_seconds = timeout if timeout is not None else clone_git_timeout()
     target = Path(target_dir.rstrip("/"))
     if os.path.lexists(target):
         raise RuntimeError(f"git clone destination already exists: {target}")
@@ -93,6 +116,7 @@ def clone_gh_repo(
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=timeout_seconds,
                 env=non_interactive_git_env(),
                 stdin=subprocess.DEVNULL,
             )
@@ -101,6 +125,13 @@ def clone_gh_repo(
             if first_error is None:
                 first_error = e
             failures.append(_format_clone_failure(label, url, e))
+            _remove_failed_clone_target(target)
+        except subprocess.TimeoutExpired as e:
+            if first_error is None:
+                first_error = e
+            failures.append(
+                f"{label} clone from {url} timed out after {timeout_seconds:g}s"
+            )
             _remove_failed_clone_target(target)
         except FileNotFoundError as e:
             _remove_failed_clone_target(target)

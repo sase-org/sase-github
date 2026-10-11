@@ -73,8 +73,8 @@ Requires `sase>=0.11.0` as a dependency. For GitHub Enterprise Server or self-ho
 
 - **`get_github_hosts()` / `get_default_github_host()`** — Read `github_hosts` from sase config to recognize GitHub
   Enterprise hosts and choose the default host for `#gh(owner/repo)` clone refs
-- **`get_github_orgs()`** — Reads `github_orgs` from sase config to determine SSH vs HTTPS clone URLs for
-  organizations/users with push access, and to seed local `#gh:` owner completion
+- **`get_github_orgs()`** — Reads `github_orgs` from sase config to seed local `#gh:` owner completion and to
+  gate PR submission. It does not choose SSH vs HTTPS: cloning always tries SSH first, then falls back to HTTPS
 
 ### Task type
 

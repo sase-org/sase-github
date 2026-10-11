@@ -18,9 +18,15 @@ from sase.workspace_provider import (
 from sase_github.workspace.projects import (
     enabled_project_records,
     github_workspace_dir,
+    projects_base,
 )
 from sase_github.workspace.refs import peek_gh_ref, resolve_gh_ref
-from sase_github.workspace.remotes import clone_gh_repo
+from sase_github.workspace.remotes import (
+    DEFAULT_CLONE_TIMEOUT_SECONDS,
+    ENV_CLONE_TIMEOUT,
+    clone_gh_repo,
+    clone_git_timeout,
+)
 from sase_github.workspace.sdd_repo import (
     probe_github_repo_detail,
     sidecar_sdd_candidates,
@@ -424,6 +430,72 @@ class TestHostAwareWorkspace:
             "git@github.enterprise.test:alice/repo.git",
             expected.rstrip("/"),
         ]
+
+
+def test_projects_base_honors_sase_home(tmp_path: Path) -> None:
+    sase_home = tmp_path / "custom-home"
+    with patch.dict(os.environ, {"SASE_HOME": str(sase_home)}):
+        assert projects_base() == sase_home / "projects"
+
+
+class TestCloneTimeout:
+    def test_clone_passes_default_timeout_to_git(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            target = str(Path(d) / "repo")
+            with patch("sase_github.workspace.remotes.subprocess.run") as mock_run:
+                clone_gh_repo("alice", "repo", target)
+
+        assert mock_run.call_args.kwargs["timeout"] == clone_git_timeout()
+        assert clone_git_timeout() >= DEFAULT_CLONE_TIMEOUT_SECONDS
+
+    def test_clone_explicit_timeout_overrides_default(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            target = str(Path(d) / "repo")
+            with patch("sase_github.workspace.remotes.subprocess.run") as mock_run:
+                clone_gh_repo("alice", "repo", target, timeout=5.0)
+
+        assert mock_run.call_args.kwargs["timeout"] == 5.0
+
+    def test_clone_timeout_env_override(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as d,
+            patch.dict(os.environ, {ENV_CLONE_TIMEOUT: "42"}),
+        ):
+            assert clone_git_timeout() == 42.0
+            target = str(Path(d) / "repo")
+            with patch("sase_github.workspace.remotes.subprocess.run") as mock_run:
+                clone_gh_repo("alice", "repo", target)
+
+        assert mock_run.call_args.kwargs["timeout"] == 42.0
+
+    def test_clone_timeout_cleans_up_and_reports_remediation(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / "repo"
+
+            def hang_forever(
+                command: list[str], **_kwargs: object
+            ) -> subprocess.CompletedProcess[str]:
+                clone_target = Path(command[-1])
+                clone_target.mkdir()
+                (clone_target / "partial").write_text("stuck", encoding="utf-8")
+                raise subprocess.TimeoutExpired(command, 5.0)
+
+            with (
+                patch(
+                    "sase_github.workspace.remotes.subprocess.run",
+                    side_effect=hang_forever,
+                ),
+                pytest.raises(RuntimeError) as exc_info,
+            ):
+                clone_gh_repo("alice", "repo", str(target), timeout=5.0)
+
+            assert not target.exists()
+
+        message = str(exc_info.value)
+        assert "timed out after 5s" in message
+        assert "SSH clone" in message
+        assert "HTTPS clone" in message
+        assert "gh auth login" in message
 
 
 class TestRepoCandidateCompletion:
@@ -2512,6 +2584,64 @@ class TestDetectWorkflowTypeForProject:
         """Returns 'gh' when origin remote URL is a GitHub URL."""
         mock_run.return_value = MagicMock(
             returncode=0, stdout="https://github.com/user/repo.git\n"
+        )
+        plugin = GitHubWorkspacePlugin()
+        with tempfile.TemporaryDirectory() as d:
+            workspace = os.path.join(d, "repo")
+            os.makedirs(os.path.join(workspace, ".git"))
+            spec = os.path.join(d, "proj.sase")
+            with open(spec, "w") as f:
+                f.write(f"WORKSPACE_DIR: {workspace}\nNAME: cl\n")
+            assert plugin.ws_detect_workflow_type(project_file=spec) == "gh"
+
+    @patch("sase_github.config.get_github_hosts", return_value=["github.com"])
+    @patch("sase_github.workspace_plugin.subprocess.run")
+    def test_non_github_https_origin_returns_none(
+        self, mock_run: MagicMock, _mock_hosts: MagicMock
+    ) -> None:
+        """Returns None when the origin host is not a GitHub host."""
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="https://gitlab.com/user/repo.git\n"
+        )
+        plugin = GitHubWorkspacePlugin()
+        with tempfile.TemporaryDirectory() as d:
+            workspace = os.path.join(d, "repo")
+            os.makedirs(os.path.join(workspace, ".git"))
+            spec = os.path.join(d, "proj.sase")
+            with open(spec, "w") as f:
+                f.write(f"WORKSPACE_DIR: {workspace}\nNAME: cl\n")
+            assert plugin.ws_detect_workflow_type(project_file=spec) is None
+
+    @patch("sase_github.config.get_github_hosts", return_value=["github.com"])
+    @patch("sase_github.workspace_plugin.subprocess.run")
+    def test_non_github_ssh_origin_returns_none(
+        self, mock_run: MagicMock, _mock_hosts: MagicMock
+    ) -> None:
+        """Returns None for scp-style origins on non-GitHub hosts."""
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="git@gitlab.com:user/repo.git\n"
+        )
+        plugin = GitHubWorkspacePlugin()
+        with tempfile.TemporaryDirectory() as d:
+            workspace = os.path.join(d, "repo")
+            os.makedirs(os.path.join(workspace, ".git"))
+            spec = os.path.join(d, "proj.sase")
+            with open(spec, "w") as f:
+                f.write(f"WORKSPACE_DIR: {workspace}\nNAME: cl\n")
+            assert plugin.ws_detect_workflow_type(project_file=spec) is None
+
+    @patch(
+        "sase_github.config.get_github_hosts",
+        return_value=["github.enterprise.test", "github.com"],
+    )
+    @patch("sase_github.workspace_plugin.subprocess.run")
+    def test_configured_enterprise_origin_returns_gh(
+        self, mock_run: MagicMock, _mock_hosts: MagicMock
+    ) -> None:
+        """Returns 'gh' when the origin host is a configured GitHub host."""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="https://github.enterprise.test/user/repo.git\n",
         )
         plugin = GitHubWorkspacePlugin()
         with tempfile.TemporaryDirectory() as d:

@@ -22,9 +22,9 @@ Use this checklist for GitHub Enterprise Server or another self-hosted GitHub ho
    `#gh(owner/repo)` refs to clone from Enterprise. `github.com` is always included implicitly, but the first configured
    host is the default for bare refs; listing `github.com` first means bare refs default there instead. See
    [`github_hosts`](#github_hosts).
-4. **Optionally enable SSH clones.** Add owners to [`github_orgs`](#github_orgs) when you have an SSH key registered on
-   that GitHub host and want SASE to clone those repos with `git@<host>:owner/repo.git`. Owners not listed in
-   `github_orgs` use HTTPS.
+4. **Optionally register owner names.** Add owners to [`github_orgs`](#github_orgs) to seed `#gh:` owner completion
+   and to allow PR submission. It does not affect clone transport: cloning always tries SSH
+   (`git@<host>:owner/repo.git`) first, then falls back to HTTPS (`https://<host>/owner/repo.git`).
 5. **Verify and resolve a repo.** Run:
 
    ```bash
@@ -59,7 +59,7 @@ Host entries are normalized, so pasted values such as `https://github.mycompany.
 
 ## `github_orgs`
 
-The `github_orgs` setting controls how sase-github clones repositories. Add it to your sase config file
+The `github_orgs` setting registers GitHub owner names SASE should know about. Add it to your sase config file
 (`~/.config/sase/sase.yml`):
 
 ```yaml
@@ -68,11 +68,12 @@ github_orgs:
   - your-org
 ```
 
-**Effect:** When cloning a repo whose owner is in this list, sase-github uses SSH
-(`git@<github-host>:user/project.git`). For all other repos, it uses HTTPS (`https://<github-host>/user/project.git`).
+**Effect:** The list seeds local owner completion for `#gh:` prompts and gates PR submission: `ws_submit` refuses
+when the list is empty. It does **not** choose SSH vs HTTPS. Cloning always tries SSH
+(`git@<github-host>:user/project.git`) first, then falls back to HTTPS (`https://<github-host>/user/project.git`).
 
-This matters because SSH URLs require an SSH key configured with GitHub, while HTTPS URLs work for public repos without
-authentication (but require a token for push access).
+The SSH attempt requires an SSH key configured with GitHub; when it fails, the HTTPS fallback covers public repos
+without authentication (private repos still need a credential helper or token for push access).
 
 The same list also seeds local owner completion for `#gh:` prompts. SASE combines `github_orgs` with owners discovered
 from active canonical GitHub project records named `gh_<owner>__<repo>`. This completion source is local-only; it does
