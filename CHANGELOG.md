@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.23](https://github.com/sase-org/sase-github/compare/v0.2.22...v0.2.23) (2026-10-11)
+
+
+### Features
+
+* **github:** add workspace onboarding hooks for GitHub repo refs ([f1da372](https://github.com/sase-org/sase-github/commit/f1da3725f0100839341e0eb89cdb202fc08d8444))
+
 ## [0.2.22](https://github.com/sase-org/sase-github/compare/v0.2.21...v0.2.22) (2026-10-11)
 
 
