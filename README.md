@@ -46,7 +46,7 @@ sase plugin install github
 `pip install sase-github` is only an escape hatch for non-managed or library-style environments. It is not the normal
 path for a `uv tool`-managed SASE command.
 
-Requires `sase>=0.11.0` as a dependency. For GitHub Enterprise Server or self-hosted GitHub, follow the
+Requires `sase>=0.18.0` as a dependency. For GitHub Enterprise Server or self-hosted GitHub, follow the
 [GitHub Enterprise setup walkthrough](docs/configuration.md#github-enterprise-setup).
 
 ## What's Included
@@ -64,10 +64,16 @@ Requires `sase>=0.11.0` as a dependency. For GitHub Enterprise Server or self-ho
   repository, materialized before `#gh` work starts.
 - **Repo completion for `#gh:<owner>/` refs** — Supplies repository candidates to SASE prompt completion by calling
   `gh repo list <owner>`. Authenticated `gh` sessions include private repositories the user can access, and configured
-  GitHub Enterprise hosts are respected through `GH_HOST`.
+  GitHub Enterprise hosts are respected through `GH_HOST`. Entries carry the repo id, viewer permission, and
+  emptiness; truncated lists and the signed-in account's login remedy are reported.
 - **Owner completion for `#gh:` refs** — Supplies local namespace candidates from active canonical GitHub project
   records (`gh_<owner>__<repo>`) plus configured `github_orgs`, so accepting an owner can chain into repo completion
-  without a network call.
+  without a network call. The signed-in account (read from gh's local `hosts.yml`, no network) is always included.
+- **Onboarding hooks for the New Project wizard** — Implements the workspace-provider onboarding hooks for `gh`:
+  pure `owner/repo`, URL, and scp-style ref parsing; local checkout discovery from `~/projects/github/`; read-only
+  `gh repo view` probes with push-permission and SASE-managed reporting; a `gh repo create` creation form (cached
+  gitignore/license/team choice lists); and remote-only repository creation with explicit visibility and
+  post-create verification.
 
 ### Configuration
 
@@ -116,7 +122,7 @@ response naming the full `--plans` or `--research` repository. Non-interactive s
 ## Requirements
 
 - Python 3.12+
-- [sase](https://github.com/sase-org/sase) >= 0.11.0
+- [sase](https://github.com/sase-org/sase) >= 0.18.0
 - [gh](https://cli.github.com/) CLI (for GitHub API operations, mandatory sidecar repository setup, and `#gh:<owner>/`
   repository completion). Run `gh auth login`; the account must be able to create the sidecar when it is missing and
   manage its labels. For GitHub Enterprise, run `gh auth login --hostname <host>` for each configured Enterprise host.
@@ -155,6 +161,7 @@ src/sase_github/
 │   ├── projects.py          # Home-rooted layout, project records, canonical naming
 │   ├── refs.py              # `#gh` ref resolution (resolve_gh_ref, peek_gh_ref)
 │   ├── completion.py        # Prompt completion (repo candidates, owner namespaces)
+│   ├── onboarding.py        # New Project wizard hooks (parse, local, probe, create)
 │   ├── sdd_repo.py          # SDD sidecar repo identity and `gh` operations
 │   ├── sdd_sidecar.py       # SDD hook flows (preflight, create, materialize)
 │   ├── submit.py            # Patch submission (submit_patch, `gh pr merge`)

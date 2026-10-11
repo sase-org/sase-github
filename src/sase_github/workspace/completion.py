@@ -26,6 +26,10 @@ from sase_github.workspace.projects import (
 )
 
 _DEFAULT_REPO_COMPLETION_LIMIT = 200
+
+_REPO_LIST_JSON_FIELDS = (
+    "name,description,visibility,isArchived,isFork,pushedAt,id,viewerPermission,isEmpty"
+)
 _VcsRepoErrorKind = Literal[
     "auth",
     "network",
@@ -59,15 +63,16 @@ def list_github_repo_candidates(namespace: str) -> VcsRepoCandidates:
     host = get_default_github_host()
     env = non_interactive_gh_env()
     env["GH_HOST"] = host
+    limit = _repo_completion_limit()
     command = [
         "gh",
         "repo",
         "list",
         namespace,
         "--json",
-        "name,description,visibility,isArchived,isFork,pushedAt",
+        _REPO_LIST_JSON_FIELDS,
         "--limit",
-        str(_repo_completion_limit()),
+        str(limit),
     ]
     try:
         result = subprocess.run(
@@ -80,14 +85,16 @@ def list_github_repo_candidates(namespace: str) -> VcsRepoCandidates:
             stdin=subprocess.DEVNULL,
         )
     except FileNotFoundError:
-        return repo_candidates_error("tool_missing", "install the gh CLI")
+        return repo_candidates_error("tool_missing", "install the gh CLI", host=host)
     except subprocess.TimeoutExpired:
-        return repo_candidates_error("network", "repo listing failed - network error")
+        return repo_candidates_error(
+            "network", "repo listing failed - network error", host=host
+        )
     except OSError:
-        return repo_candidates_error("tool_missing", "install the gh CLI")
+        return repo_candidates_error("tool_missing", "install the gh CLI", host=host)
 
     if result.returncode != 0:
-        return _classify_gh_repo_list_error(result)
+        return _classify_gh_repo_list_error(result, host)
 
     try:
         entries = _repo_entries_from_gh_json(result.stdout, namespace)
@@ -100,6 +107,8 @@ def list_github_repo_candidates(namespace: str) -> VcsRepoCandidates:
         status="ok",
         provider_display="GitHub",
         entries=entries,
+        host=host,
+        truncated=len(entries) >= limit,
     )
 
 
@@ -118,6 +127,7 @@ def _repo_entries_from_gh_json(raw: str, namespace: str) -> tuple[VcsRepoEntry, 
         name = _string_field(item, "name")
         if not name:
             continue
+        raw_empty = item.get("isEmpty")
         entries.append(
             VcsRepoEntry(
                 name=name,
@@ -127,6 +137,9 @@ def _repo_entries_from_gh_json(raw: str, namespace: str) -> tuple[VcsRepoEntry, 
                 is_fork=bool(item.get("isFork")),
                 is_archived=bool(item.get("isArchived")),
                 pushed_at=_optional_string_field(item, "pushedAt"),
+                repo_id=_string_field(item, "id"),
+                viewer_permission=_string_field(item, "viewerPermission"),
+                is_empty=bool(raw_empty) if isinstance(raw_empty, bool) else None,
             )
         )
     return tuple(entries)
@@ -144,22 +157,35 @@ def _optional_string_field(data: dict[str, Any], key: str) -> str | None:
 
 def _classify_gh_repo_list_error(
     result: subprocess.CompletedProcess[str],
+    host: str,
 ) -> VcsRepoCandidates:
     output = "\n".join(part for part in (result.stderr, result.stdout) if part).strip()
     normalized = output.casefold()
     if looks_like_auth_error(normalized):
-        return repo_candidates_error("auth", "run 'gh auth login'")
+        return repo_candidates_error(
+            "auth",
+            "run 'gh auth login'",
+            host=host,
+            remedy_argv=("gh", "auth", "login", "-h", host),
+        )
     if looks_like_not_found_error(normalized):
-        return repo_candidates_error("not_found", "GitHub owner was not found")
+        return repo_candidates_error(
+            "not_found", "GitHub owner was not found", host=host
+        )
     if looks_like_network_error(normalized):
-        return repo_candidates_error("network", "repo listing failed - network error")
+        return repo_candidates_error(
+            "network", "repo listing failed - network error", host=host
+        )
     message = output.splitlines()[0] if output else "repo listing failed"
-    return repo_candidates_error("unknown", message)
+    return repo_candidates_error("unknown", message, host=host)
 
 
 def repo_candidates_error(
     error_kind: _VcsRepoErrorKind,
     message: str,
+    *,
+    host: str = "",
+    remedy_argv: tuple[str, ...] = (),
 ) -> VcsRepoCandidates:
     return VcsRepoCandidates(
         status="error",
@@ -167,6 +193,8 @@ def repo_candidates_error(
         message=message,
         provider_display="GitHub",
         entries=(),
+        host=host,
+        remedy_argv=remedy_argv,
     )
 
 
@@ -177,6 +205,9 @@ def _pluralize_project_count(count: int) -> str:
 
 def list_github_ref_namespaces() -> VcsRefNamespaces:
     from sase_github.config import get_github_orgs
+    from sase_github.workspace.onboarding import read_gh_account
+
+    account = read_gh_account()
 
     owner_counts: dict[str, int] = {}
     owner_names: dict[str, str] = {}
@@ -200,12 +231,17 @@ def list_github_ref_namespaces() -> VcsRefNamespaces:
         owner_names.setdefault(key, name)
         descriptions.setdefault(key, "from github_orgs")
 
+    account_key = account.casefold() if account else ""
+    if account_key and account_key not in owner_names:
+        owner_names[account_key] = account
+        descriptions[account_key] = "your repositories"
+
     entries = tuple(
         VcsNamespaceEntry(
             name=owner_names[key],
             description=descriptions[key],
-            kind_label="org",
+            kind_label="you" if account_key and key == account_key else "org",
         )
         for key in sorted(owner_names, key=lambda item: owner_names[item].casefold())
     )
-    return VcsRefNamespaces(entries=entries)
+    return VcsRefNamespaces(entries=entries, account=account)

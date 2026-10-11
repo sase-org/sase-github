@@ -564,7 +564,8 @@ class TestRepoCandidateCompletion:
             "list",
             "alice",
             "--json",
-            "name,description,visibility,isArchived,isFork,pushedAt",
+            "name,description,visibility,isArchived,isFork,pushedAt,"
+            "id,viewerPermission,isEmpty",
             "--limit",
             "2",
         ]
@@ -684,10 +685,15 @@ class TestRefNamespaceCompletion:
                 return_value=records,
             ),
             patch("sase_github.config.get_github_orgs", return_value=[]),
+            patch(
+                "sase_github.workspace.onboarding.read_gh_account",
+                return_value="",
+            ),
         ):
             result = GitHubWorkspacePlugin().ws_list_ref_namespaces("gh")
 
         assert result is not None
+        assert result.account == ""
         assert [
             (entry.name, entry.description, entry.kind_label)
             for entry in result.entries
@@ -707,6 +713,10 @@ class TestRefNamespaceCompletion:
             patch(
                 "sase_github.config.get_github_orgs",
                 return_value=["SASE-ORG", "bbugyi200", ""],
+            ),
+            patch(
+                "sase_github.workspace.onboarding.read_gh_account",
+                return_value="",
             ),
         ):
             result = GitHubWorkspacePlugin().ws_list_ref_namespaces("gh")
@@ -744,6 +754,10 @@ class TestRefNamespaceCompletion:
                 return_value=records,
             ),
             patch("sase_github.config.get_github_orgs", return_value=["bbugyi200"]),
+            patch(
+                "sase_github.workspace.onboarding.read_gh_account",
+                return_value="",
+            ),
             patch(
                 "subprocess.run",
                 side_effect=AssertionError("namespace completion must stay local"),

@@ -48,6 +48,7 @@ heavier hooks into the sibling `workspace/` subpackage:
 | `workspace/projects.py`   | Home-rooted layout, project-record lookup, canonical `gh_<owner>__<repo>` naming  |
 | `workspace/refs.py`       | `#gh` ref resolution: `resolve_gh_ref`, `peek_gh_ref`                            |
 | `workspace/completion.py` | Prompt completion: `gh repo list` candidates and local owner namespaces          |
+| `workspace/onboarding.py` | New Project wizard hooks: parse, local candidates, probe, creation form, create |
 | `workspace/sdd_repo.py`   | SDD sidecar repo identity and `gh` operations on it                               |
 | `workspace/sdd_sidecar.py`| SDD hook flows: preflight, create-or-verify, and materialize                     |
 | `workspace/submit.py`     | Patch submission: `PR_URL_RE`, `submit_patch`, PR state checks, `gh pr merge`    |
@@ -62,6 +63,11 @@ heavier hooks into the sibling `workspace/` subpackage:
 | `ws_get_change_label()`                | Returns `"PR"` for GitHub projects                                                |
 | `ws_resolve_ref()`                     | Resolves `#gh` references (see [Reference Resolution](#reference-resolution))     |
 | `ws_list_ref_namespaces()`             | Lists local `#gh:` owner candidates from active canonical projects and config     |
+| `ws_parse_repo_ref()`                | Purely parses `owner/repo`, `gh:` URLs, and scp/ssh spellings into canonical refs |
+| `ws_list_local_repo_candidates()`    | Discovers `~/projects/github/` checkouts from `.git/config` origins (no network)  |
+| `ws_probe_repo()`                    | Read-only `gh repo view` probe: visibility, push rights, SASE-managed marker      |
+| `ws_describe_repo_creation()`        | `gh repo create` form with cached gitignore/license/team choice lists             |
+| `ws_create_repo()`                   | Remote-only `gh repo create` with explicit visibility and post-create verify       |
 | `ws_extract_change_identifier()`       | Extracts PR number from GitHub PR URLs                                            |
 | `ws_generate_submitted_check_script()` | Generates a bash script that checks if a PR is merged via `gh pr view`            |
 | `ws_supports_reviewer_comments()`      | Returns `False` for GitHub URLs (critique comments not supported)                 |
@@ -129,10 +135,11 @@ When the ref matches an existing Patch:
 ## Ref Namespace Completion
 
 For root ref completion after `#gh:`, `GitHubWorkspacePlugin` implements `ws_list_ref_namespaces()`. It returns GitHub
-owner/org candidates from two local sources only:
+owner/org candidates from local sources only, plus the signed-in account:
 
 - Active SASE project records whose directory keys use the canonical GitHub shape `gh_<owner>__<repo>`
 - The configured `github_orgs` list
+- The signed-in login read from gh's local `hosts.yml` (no network, no subprocess), labeled `you`
 
 Record-derived owners show their active project count. Config-only owners show `from github_orgs`. Duplicate owners are
 deduplicated case-insensitively, with record-derived spellings preferred when both sources include the same owner.

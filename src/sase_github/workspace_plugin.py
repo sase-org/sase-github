@@ -15,6 +15,11 @@ import subprocess
 
 from sase.workspace_provider import (
     ExternalRepoCloneResult,
+    LocalRepoCandidates,
+    ParsedRepoRef,
+    RepoCreateResult,
+    RepoCreationForm,
+    RepoProbe,
     ResolvedRef,
     SddSidecarPreflight,
     VcsRefNamespaces,
@@ -29,6 +34,13 @@ from sase_github.workspace.completion import (
     repo_candidates_error,
 )
 from sase_github.workspace.mail import prepare_mail
+from sase_github.workspace.onboarding import (
+    create_gh_repo,
+    describe_gh_repo_creation,
+    list_gh_local_repo_candidates,
+    parse_gh_repo_ref,
+    probe_gh_repo,
+)
 from sase_github.workspace.refs import peek_gh_ref, resolve_gh_ref
 from sase_github.workspace.remotes import clone_gh_repo
 from sase_github.workspace.sdd_sidecar import (
@@ -173,6 +185,47 @@ class GitHubWorkspacePlugin:
         if workflow_type != "gh":
             return None
         return list_github_ref_namespaces()
+
+    @hookimpl
+    def ws_parse_repo_ref(self, workflow_type: str, text: str) -> ParsedRepoRef | None:
+        """Parse user text into a canonical GitHub reference (pure)."""
+        if workflow_type != "gh":
+            return None
+        return parse_gh_repo_ref(text)
+
+    @hookimpl
+    def ws_list_local_repo_candidates(
+        self, workflow_type: str
+    ) -> LocalRepoCandidates | None:
+        """Discover local GitHub checkouts without subprocesses or network."""
+        if workflow_type != "gh":
+            return None
+        return list_gh_local_repo_candidates()
+
+    @hookimpl
+    def ws_probe_repo(self, workflow_type: str, ref: str) -> RepoProbe | None:
+        """Read-only, bounded probe of one GitHub repository."""
+        if workflow_type != "gh":
+            return None
+        return probe_gh_repo(ref)
+
+    @hookimpl
+    def ws_describe_repo_creation(
+        self, workflow_type: str, namespace: str
+    ) -> RepoCreationForm | None:
+        """Describe GitHub's repository creation form for one owner."""
+        if workflow_type != "gh":
+            return None
+        return describe_gh_repo_creation(namespace)
+
+    @hookimpl
+    def ws_create_repo(
+        self, workflow_type: str, ref: str, options: dict[str, str]
+    ) -> RepoCreateResult | None:
+        """Create only the remote GitHub repository."""
+        if workflow_type != "gh":
+            return None
+        return create_gh_repo(ref, options)
 
     @hookimpl
     def ws_extract_change_identifier(self, pr_url: str) -> tuple[str, str] | None:
