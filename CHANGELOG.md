@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.24](https://github.com/sase-org/sase-github/compare/v0.2.23...v0.2.24) (2026-10-12)
+
+
+### Bug Fixes
+
+* **onboarding:** make GitHub create and discovery correct ([4def532](https://github.com/sase-org/sase-github/commit/4def5328064a46aab247029be0091a38beee9130))
+
 ## [0.2.23](https://github.com/sase-org/sase-github/compare/v0.2.22...v0.2.23) (2026-10-11)
 
 
