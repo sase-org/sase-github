@@ -201,7 +201,34 @@ def test_external_repo_hook_clones_and_reports_canonical_result(
         dest_dir=str(dest),
         default_branch="trunk",
     )
-    clone.assert_called_once_with("acme", "widget", str(dest))
+    clone.assert_called_once_with("acme", "widget", str(dest), host="github.com")
+
+
+def test_external_repo_hook_clones_host_qualified_ref(tmp_path: Path) -> None:
+    dest = tmp_path / "widget"
+    plugin = GitHubWorkspacePlugin()
+
+    with (
+        patch(
+            "sase_github.config.get_github_hosts",
+            return_value=["github.com", "ghe.example.test"],
+        ),
+        patch("sase_github.workspace_plugin.clone_gh_repo") as clone,
+        patch(
+            "sase_github.workspace_plugin.get_default_branch",
+            return_value="origin/trunk",
+        ),
+    ):
+        result = plugin.ws_clone_external_repo(
+            "gh", "ghe.example.test/acme/widget", str(dest)
+        )
+
+    assert result == ExternalRepoCloneResult(
+        canonical_name="gh:ghe.example.test/acme/widget",
+        dest_dir=str(dest),
+        default_branch="trunk",
+    )
+    clone.assert_called_once_with("acme", "widget", str(dest), host="ghe.example.test")
 
 
 class TestHostAwareWorkspace:
@@ -2273,6 +2300,30 @@ class TestResolveGhRef:
         with pytest.raises(ValueError, match="expected 'user/project'"):
             resolve_gh_ref("a/b/c")
 
+    @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
+    def test_host_qualified_ref_uses_enterprise_layout(
+        self, mock_branch: MagicMock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d)
+            workspace = (
+                home / "projects" / "github" / "ghe.example.test" / "acme" / "widget"
+            )
+            workspace.mkdir(parents=True)
+            path_patch, env_patch = _home_patches(home)
+            with (
+                path_patch,
+                env_patch,
+                patch(
+                    "sase_github.config.get_github_hosts",
+                    return_value=["github.com", "ghe.example.test"],
+                ),
+            ):
+                result = resolve_gh_ref("ghe.example.test/acme/widget")
+
+            assert result.primary_workspace_dir == str(workspace) + "/"
+            assert result.project_name == "gh_acme__widget"
+
 
 class TestPeekGhRef:
     def test_repo_path_existing_workspace_resolves_without_subprocess(self) -> None:
@@ -2598,6 +2649,24 @@ class TestDetectWorkflowTypeForProject:
         """Returns 'gh' when origin remote URL is a GitHub URL."""
         mock_run.return_value = MagicMock(
             returncode=0, stdout="https://github.com/user/repo.git\n"
+        )
+        plugin = GitHubWorkspacePlugin()
+        with tempfile.TemporaryDirectory() as d:
+            workspace = os.path.join(d, "repo")
+            os.makedirs(os.path.join(workspace, ".git"))
+            spec = os.path.join(d, "proj.sase")
+            with open(spec, "w") as f:
+                f.write(f"WORKSPACE_DIR: {workspace}\nNAME: cl\n")
+            assert plugin.ws_detect_workflow_type(project_file=spec) == "gh"
+
+    @patch("sase_github.config.get_github_hosts", return_value=["github.com"])
+    @patch("sase_github.workspace_plugin.subprocess.run")
+    def test_github_origin_with_ssh_port_returns_gh(
+        self, mock_run: MagicMock, _mock_hosts: MagicMock
+    ) -> None:
+        """Ports in ssh:// remotes still match a configured GitHub host."""
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="ssh://git@github.com:22/user/repo.git\n"
         )
         plugin = GitHubWorkspacePlugin()
         with tempfile.TemporaryDirectory() as d:

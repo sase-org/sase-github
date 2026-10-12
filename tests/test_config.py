@@ -50,6 +50,10 @@ def test_normalize_github_host_accepts_urls_and_remotes() -> None:
     assert normalize_github_host("ssh://git@github.enterprise.test/org/repo.git") == (
         "github.enterprise.test"
     )
+    assert (
+        normalize_github_host("https://github.enterprise.test:8443/org/repo")
+        == "github.enterprise.test"
+    )
     assert normalize_github_host("") is None
 
 
@@ -62,7 +66,13 @@ def test_parse_github_remote_url_accepts_common_forms() -> None:
     )
     assert parse_github_remote_url(
         "ssh://git@github.enterprise.test:2222/org/repo.git"
-    ) == GitHubRemote("github.enterprise.test:2222", "org", "repo")
+    ) == GitHubRemote("github.enterprise.test", "org", "repo")
+    assert parse_github_remote_url(
+        "ssh://git@github.com:22/Owner/repo.git"
+    ) == GitHubRemote("github.com", "Owner", "repo")
+    assert parse_github_remote_url(
+        "https://github.com:443/Owner/repo.git"
+    ) == GitHubRemote("github.com", "Owner", "repo")
 
 
 def test_parse_github_remote_url_rejects_non_remote_paths() -> None:

@@ -31,8 +31,8 @@ from sase.workspace_provider import (
     RepoCreationForm,
     RepoProbe,
 )
+from sase_github.config import DEFAULT_GITHUB_HOST, strip_github_host_port
 from sase_github.workspace.gh_cli import (
-    DEFAULT_GH_TIMEOUT_SECONDS,
     looks_like_already_exists_error,
     looks_like_auth_error,
     looks_like_network_error,
@@ -46,8 +46,10 @@ PROBE_TIMEOUT_SECONDS = 10
 #: Timeout for the raw `sase/sase.yml` content read, in seconds.
 SASE_YML_TIMEOUT_SECONDS = 10
 
-#: Timeout for repository creation, in seconds.
-CREATE_TIMEOUT_SECONDS = 30
+#: Generous timeout for `gh repo create`, in seconds. Template expansion
+#: can outlast a short API timeout; on expiry we re-probe so the journal
+#: can still adopt the repository.
+CREATE_TIMEOUT_SECONDS = 120
 
 #: Timeout for creation-form choice-list queries, in seconds.
 CHOICE_LIST_TIMEOUT_SECONDS = 10
@@ -80,19 +82,12 @@ _PROBE_JSON_FIELDS = (
     "viewerPermission,defaultBranchRef,url,description"
 )
 
-_VERIFY_JSON_FIELDS = "id,visibility,url"
+_VERIFY_JSON_FIELDS = (
+    "id,visibility,url,hasIssuesEnabled,hasWikiEnabled,description,homepageUrl"
+)
 
 _TRUE_STRINGS = frozenset({"true", "yes", "on", "1"})
 _FALSE_STRINGS = frozenset({"false", "no", "off", "0"})
-
-
-def _strip_port(host: str) -> str:
-    if host.startswith("["):
-        end = host.find("]")
-        return host[: end + 1] if end != -1 else host
-    if host.count(":") == 1:
-        return host.split(":")[0]
-    return host
 
 
 def _normalize_name(part: str) -> str:
@@ -110,6 +105,14 @@ def _split_owner_repo(path: str) -> tuple[str, str] | None:
     return owner, repo
 
 
+def _canonical_repo_ref(host: str, owner: str, repo: str) -> str:
+    from sase_github.config import get_default_github_host
+
+    if host.casefold() == get_default_github_host().casefold():
+        return f"{owner}/{repo}"
+    return f"{host}/{owner}/{repo}"
+
+
 def _build_parsed(
     host: str,
     owner: str,
@@ -119,7 +122,7 @@ def _build_parsed(
 ) -> ParsedRepoRef:
     from sase_github.workspace.projects import github_workspace_dir
 
-    ref = f"{owner}/{repo}"
+    ref = _canonical_repo_ref(host, owner, repo)
     return ParsedRepoRef(
         workflow_type="gh",
         ref=ref,
@@ -140,10 +143,13 @@ def parse_gh_repo_ref(text: str) -> ParsedRepoRef | None:
     """Parse user text into a canonical GitHub reference.
 
     Pure: no filesystem, network, or subprocess effects. Accepts
-    ``owner/repo``, ``gh:owner/repo``, ``https://<host>/owner/repo[.git]``
-    (for configured GitHub hosts only) and scp/ssh remote spellings
+    ``owner/repo``, ``gh:owner/repo``, a host-qualified ``<host>/owner/repo``
+    for configured hosts, ``https://<host>/owner/repo[.git]`` (for
+    configured GitHub hosts only) and scp/ssh remote spellings
     (``git@<host>:owner/repo.git``,
-    ``ssh://git@<host>[:port]/owner/repo.git``).
+    ``ssh://git@<host>[:port]/owner/repo.git``). Non-default hosts keep a
+    host-qualified canonical ``ref`` so later parse/clone/create calls hit
+    the same host.
     """
     from sase_github.config import get_default_github_host, get_github_hosts
 
@@ -162,7 +168,7 @@ def parse_gh_repo_ref(text: str) -> ParsedRepoRef | None:
         from urllib.parse import urlparse
 
         parsed_url = urlparse(value)
-        candidate_host = _strip_port(
+        candidate_host = strip_github_host_port(
             parsed_url.netloc.rsplit("@", 1)[-1].strip().lower()
         )
         if not candidate_host or candidate_host.casefold() not in hosts:
@@ -182,10 +188,20 @@ def parse_gh_repo_ref(text: str) -> ParsedRepoRef | None:
             return None
         host = candidate_host
     else:
-        coords = _split_owner_repo(value)
-        if coords is None:
-            return None
-        host = get_default_github_host()
+        parts = [part for part in value.strip("/").split("/") if part]
+        if len(parts) == 3:
+            candidate_host = parts[0].strip().lower()
+            if not candidate_host or candidate_host.casefold() not in hosts:
+                return None
+            coords = _split_owner_repo("/".join(parts[1:]))
+            if coords is None:
+                return None
+            host = candidate_host
+        else:
+            coords = _split_owner_repo(value)
+            if coords is None:
+                return None
+            host = get_default_github_host()
 
     raw_owner, raw_repo = coords
     owner = _normalize_name(raw_owner)
@@ -209,13 +225,12 @@ def _origin_from_config(config_path: Path) -> str:
 def _iter_candidate_dirs(root: Path) -> list[tuple[Path, str, str, str]]:
     """Return ``(dir, host, owner, repo)`` triples under the github layout root.
 
-    Two levels (``<owner>/<repo>``) resolve against the default host; three
-    levels (``<host>/<owner>/<repo>``) carry an explicit host. Depth and entry
-    counts are bounded; ``OSError`` on any level yields no entries there.
+    Two levels (``<owner>/<repo>``) are the ``github.com`` layout from
+    :func:`github_workspace_dir`; three levels (``<host>/<owner>/<repo>``)
+    carry an explicit host (Enterprise, or ``github.com`` when it is not
+    the default). Depth and entry counts are bounded; ``OSError`` on any
+    level yields no entries there.
     """
-    from sase_github.config import get_default_github_host
-
-    default_host = get_default_github_host()
     found: list[tuple[Path, str, str, str]] = []
     try:
         level_one = sorted(
@@ -233,7 +248,7 @@ def _iter_candidate_dirs(root: Path) -> list[tuple[Path, str, str, str]]:
         except OSError:
             continue
         for second in level_two:
-            found.append((second, default_host, owner_or_host.name, second.name))
+            found.append((second, DEFAULT_GITHUB_HOST, owner_or_host.name, second.name))
             try:
                 level_three = sorted(
                     (entry for entry in second.iterdir() if entry.is_dir()),
@@ -252,8 +267,10 @@ def list_gh_local_repo_candidates() -> LocalRepoCandidates:
     Walks ``~/projects/github/<owner>/<repo>/`` (and host-prefixed
     ``<host>/<owner>/<repo>/``) to a bounded depth, reads each ``origin``
     from ``.git/config`` directly, and keeps entries whose origin identity
-    matches the directory. Siblings named ``*_<digits>`` are marked
-    ``numbered_copy``.
+    matches the directory. A trailing ``_<digits>`` is stripped before the
+    identity comparison so copies such as ``CV_10`` of ``CV`` are kept and
+    marked ``numbered_copy``; a repository that is itself named ``*_N``
+    matches the full directory name and is not a copy.
     """
     from sase_github.config import parse_github_remote_url
 
@@ -268,11 +285,17 @@ def list_gh_local_repo_candidates() -> LocalRepoCandidates:
         parsed_origin = parse_github_remote_url(origin)
         if parsed_origin is None:
             continue
-        expected_identity = f"{host}/{owner}/{repo}".casefold()
         actual_identity = (
             f"{parsed_origin.host}/{parsed_origin.owner}/{parsed_origin.repo}"
         ).casefold()
-        if actual_identity != expected_identity:
+        full_identity = f"{host}/{owner}/{repo}".casefold()
+        stripped_name = _NUMBERED_COPY_RE.sub("", repo)
+        stripped_identity = f"{host}/{owner}/{stripped_name}".casefold()
+        if actual_identity == full_identity:
+            numbered_copy = False
+        elif stripped_name != repo and actual_identity == stripped_identity:
+            numbered_copy = True
+        else:
             continue
         parsed = _build_parsed(
             parsed_origin.host, parsed_origin.owner, parsed_origin.repo
@@ -295,7 +318,7 @@ def list_gh_local_repo_candidates() -> LocalRepoCandidates:
             parsed=parsed,
             path=str(directory),
             origin_url=origin,
-            numbered_copy=_NUMBERED_COPY_RE.search(directory.name) is not None,
+            numbered_copy=numbered_copy,
         )
         candidates[(candidate.path.casefold(), parsed.identity_key)] = candidate
     return LocalRepoCandidates(
@@ -430,7 +453,7 @@ def probe_gh_repo(ref: str) -> RepoProbe | None:
     parsed = parse_gh_repo_ref(ref)
     if parsed is None:
         return None
-    owner, _, name = parsed.ref.partition("/")
+    owner, name = parsed.owner, parsed.name
     if not owner or not name:
         return None
     host = parsed.host
@@ -547,7 +570,11 @@ def _write_cached_values(key: str, values: list[str]) -> None:
 
 
 def _run_gh(
-    argv: list[str], host: str, timeout: int
+    argv: list[str],
+    host: str,
+    timeout: int,
+    *,
+    raise_timeout: bool = False,
 ) -> subprocess.CompletedProcess[str] | None:
     try:
         return subprocess.run(
@@ -559,7 +586,11 @@ def _run_gh(
             env=_gh_env(host),
             stdin=subprocess.DEVNULL,
         )
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        if raise_timeout:
+            raise
+        return None
+    except (FileNotFoundError, OSError):
         return None
 
 
@@ -664,7 +695,14 @@ def _member_orgs(host: str) -> list[str] | None:
     if cached is not None:
         return cached
     result = _run_gh(
-        ["gh", "api", "user/memberships/orgs", "--jq", ".[].organization.login"],
+        [
+            "gh",
+            "api",
+            "--paginate",
+            "user/memberships/orgs",
+            "--jq",
+            ".[].organization.login",
+        ],
         host,
         CHOICE_LIST_TIMEOUT_SECONDS,
     )
@@ -706,7 +744,7 @@ def describe_gh_repo_creation(namespace: str) -> RepoCreationForm | None:
     else:
         team_lines, ok = _cached_choice_lines(
             f"teams\t{host}\t{owner.casefold()}",
-            ["gh", "api", f"orgs/{owner}/teams"],
+            ["gh", "api", "--paginate", f"orgs/{owner}/teams"],
             host,
             full_json="teams",
         )
@@ -860,18 +898,109 @@ def _option_bool(options: dict[str, str], name: str, *, default: bool) -> bool:
     return default
 
 
+def _template_conflict_flags(options: dict[str, str]) -> list[str]:
+    """Flags gh 2.100 rejects together with ``--template``/``-p``."""
+    conflicts: list[str] = []
+    add_readme_raw = (options.get("add_readme") or "").strip()
+    if add_readme_raw and _option_bool(options, "add_readme", default=False):
+        conflicts.append("--add-readme")
+    if (options.get("gitignore") or "").strip():
+        conflicts.append("-g")
+    if (options.get("license") or "").strip():
+        conflicts.append("-l")
+    if (options.get("team") or "").strip():
+        conflicts.append("-t")
+    return conflicts
+
+
+def _append_bool_mismatch(
+    mismatches: list[str],
+    data: dict[str, Any],
+    json_key: str,
+    requested: bool,
+    label: str,
+) -> None:
+    actual = data.get(json_key)
+    if not isinstance(actual, bool) or actual is requested:
+        return
+    mismatches.append(
+        f"{label}: requested {'true' if requested else 'false'}, "
+        f"got {'true' if actual else 'false'}"
+    )
+
+
+def _collect_create_mismatches(
+    data: dict[str, Any],
+    options: dict[str, str],
+    visibility: str,
+) -> list[str]:
+    mismatches: list[str] = []
+    actual_visibility = _string_or_empty(data, "visibility").casefold()
+    if actual_visibility and actual_visibility != visibility:
+        mismatches.append(
+            f"visibility: requested {visibility}, got {actual_visibility}"
+        )
+    description = (options.get("description") or "").strip()
+    if description:
+        actual = _string_or_empty(data, "description")
+        if actual != description:
+            mismatches.append(f"description: requested {description}, got {actual}")
+    homepage = (options.get("homepage") or "").strip()
+    if homepage:
+        actual = _string_or_empty(data, "homepageUrl")
+        if actual != homepage:
+            mismatches.append(f"homepage: requested {homepage}, got {actual}")
+    _append_bool_mismatch(
+        mismatches,
+        data,
+        "hasIssuesEnabled",
+        _option_bool(options, "issues", default=True),
+        "issues",
+    )
+    _append_bool_mismatch(
+        mismatches,
+        data,
+        "hasWikiEnabled",
+        _option_bool(options, "wiki", default=True),
+        "wiki",
+    )
+    return mismatches
+
+
+def _exists_create_result(
+    parsed: ParsedRepoRef,
+    owner: str,
+    name: str,
+    *,
+    fallback_message: str,
+) -> RepoCreateResult:
+    probe = probe_gh_repo(parsed.ref)
+    if probe is not None and probe.status == "found":
+        return RepoCreateResult(
+            status="exists",
+            parsed=parsed,
+            repo_id=probe.repo_id,
+            web_url=probe.web_url,
+            visibility=probe.visibility,
+            message=f"{owner}/{name} already exists",
+        )
+    return RepoCreateResult(status="failed", parsed=parsed, message=fallback_message)
+
+
 def create_gh_repo(ref: str, options: dict[str, str]) -> RepoCreateResult | None:
     """Create only the remote GitHub repository.
 
     Never clones, registers, or writes project records. Always passes an
     explicit visibility and never falls back to public. On an "already
-    exists" error, re-probes and reports `exists`. Verifies after creating
-    and reports requested settings the repo does not reflect.
+    exists" error or a create timeout, re-probes and reports `exists`.
+    Verifies after creating and reports requested settings the repo does
+    not reflect. Never emits ``--add-readme``, ``-g``, ``-l``, or ``-t``
+    together with ``-p``; conflicting options fail before any subprocess.
     """
     parsed = parse_gh_repo_ref(ref)
     if parsed is None:
         return None
-    owner, _, name = parsed.ref.partition("/")
+    owner, name = parsed.owner, parsed.name
     if not owner or not name:
         return None
     host = parsed.host
@@ -887,6 +1016,20 @@ def create_gh_repo(ref: str, options: dict[str, str]) -> RepoCreateResult | None
             ),
         )
 
+    template = (options.get("template") or "").strip()
+    if template:
+        conflicts = _template_conflict_flags(options)
+        if conflicts:
+            flags = ", ".join(conflicts)
+            return RepoCreateResult(
+                status="failed",
+                parsed=parsed,
+                message=(
+                    f"template cannot be combined with {flags}; "
+                    "gh rejects --add-readme, -g, -l, and -t together with --template"
+                ),
+            )
+
     argv = ["gh", "repo", "create", f"{owner}/{name}", f"--{visibility}"]
     description = (options.get("description") or "").strip()
     if description:
@@ -894,33 +1037,43 @@ def create_gh_repo(ref: str, options: dict[str, str]) -> RepoCreateResult | None
     homepage = (options.get("homepage") or "").strip()
     if homepage:
         argv += ["-h", homepage]
-    if _option_bool(options, "add_readme", default=True):
-        argv.append("--add-readme")
-    gitignore = (options.get("gitignore") or "").strip()
-    if gitignore:
-        argv += ["-g", gitignore]
-    license_opt = (options.get("license") or "").strip()
-    if license_opt:
-        argv += ["-l", license_opt]
-    template = (options.get("template") or "").strip()
     if template:
         argv += ["-p", template]
         if _option_bool(options, "include_all_branches", default=False):
             argv.append("--include-all-branches")
-    team = (options.get("team") or "").strip()
-    if team:
-        argv += ["-t", team]
+    else:
+        if _option_bool(options, "add_readme", default=True):
+            argv.append("--add-readme")
+        gitignore = (options.get("gitignore") or "").strip()
+        if gitignore:
+            argv += ["-g", gitignore]
+        license_opt = (options.get("license") or "").strip()
+        if license_opt:
+            argv += ["-l", license_opt]
+        team = (options.get("team") or "").strip()
+        if team:
+            argv += ["-t", team]
     if not _option_bool(options, "issues", default=True):
         argv.append("--disable-issues")
     if not _option_bool(options, "wiki", default=True):
         argv.append("--disable-wiki")
 
-    result = _run_gh(argv, host, CREATE_TIMEOUT_SECONDS)
+    try:
+        result = _run_gh(argv, host, CREATE_TIMEOUT_SECONDS, raise_timeout=True)
+    except subprocess.TimeoutExpired:
+        return _exists_create_result(
+            parsed,
+            owner,
+            name,
+            fallback_message=(
+                f"gh repo create timed out after {CREATE_TIMEOUT_SECONDS}s"
+            ),
+        )
     if result is None:
         return RepoCreateResult(
             status="failed",
             parsed=parsed,
-            message="could not run gh (missing, or the call timed out)",
+            message="could not run gh (missing, or the call failed to start)",
         )
     if result.returncode != 0:
         output = "\n".join(
@@ -929,17 +1082,7 @@ def create_gh_repo(ref: str, options: dict[str, str]) -> RepoCreateResult | None
         normalized = output.casefold()
         message = output.splitlines()[0] if output else "gh repo create failed"
         if looks_like_already_exists_error(normalized):
-            probe = probe_gh_repo(ref)
-            if probe is not None and probe.status == "found":
-                return RepoCreateResult(
-                    status="exists",
-                    parsed=parsed,
-                    repo_id=probe.repo_id,
-                    web_url=probe.web_url,
-                    visibility=probe.visibility,
-                    message=f"{owner}/{name} already exists",
-                )
-            return RepoCreateResult(status="failed", parsed=parsed, message=message)
+            return _exists_create_result(parsed, owner, name, fallback_message=message)
         return RepoCreateResult(status="failed", parsed=parsed, message=message)
 
     verify = _run_gh(
@@ -963,11 +1106,7 @@ def create_gh_repo(ref: str, options: dict[str, str]) -> RepoCreateResult | None
         else:
             repo_id = _string_or_empty(data, "id")
             web_url = _string_or_empty(data, "url") or web_url
-            actual_visibility = _string_or_empty(data, "visibility").casefold()
-            if actual_visibility and actual_visibility != visibility:
-                mismatches.append(
-                    f"visibility: requested {visibility}, got {actual_visibility}"
-                )
+            mismatches = _collect_create_mismatches(data, options, visibility)
     return RepoCreateResult(
         status="created",
         parsed=parsed,

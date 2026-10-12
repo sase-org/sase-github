@@ -70,10 +70,11 @@ Requires `sase>=0.18.0` as a dependency. For GitHub Enterprise Server or self-ho
   records (`gh_<owner>__<repo>`) plus configured `github_orgs`, so accepting an owner can chain into repo completion
   without a network call. The signed-in account (read from gh's local `hosts.yml`, no network) is always included.
 - **Onboarding hooks for the New Project wizard** — Implements the workspace-provider onboarding hooks for `gh`:
-  pure `owner/repo`, URL, and scp-style ref parsing; local checkout discovery from `~/projects/github/`; read-only
-  `gh repo view` probes with push-permission and SASE-managed reporting; a `gh repo create` creation form (cached
-  gitignore/license/team choice lists); and remote-only repository creation with explicit visibility and
-  post-create verification.
+  pure `owner/repo`, host-qualified, URL, and scp-style ref parsing; local checkout discovery from `~/projects/github/`;
+  read-only `gh repo view` probes with push-permission and SASE-managed reporting; a `gh repo create` creation form
+  (cached, paginated gitignore/license/team choice lists); and remote-only repository creation with explicit visibility,
+  template-flag hygiene, timeout re-probe, and post-create verification. Clone timeouts are overridable with
+  `SASE_GITHUB_CLONE_TIMEOUT`; see [configuration](docs/configuration.md#sase_github_clone_timeout).
 
 ### Configuration
 

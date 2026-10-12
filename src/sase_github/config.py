@@ -19,6 +19,17 @@ class GitHubRemote:
     repo: str
 
 
+def strip_github_host_port(host: str) -> str:
+    """Drop a trailing ``:port`` from a host, including ``[ipv6]:port``."""
+    value = host.strip()
+    if value.startswith("["):
+        end = value.find("]")
+        return value[: end + 1] if end != -1 else value
+    if value.count(":") == 1:
+        return value.split(":", 1)[0]
+    return value
+
+
 def normalize_github_host(value: object) -> str | None:
     """Normalize a configured GitHub host or pasted GitHub URL."""
     if value is None:
@@ -39,6 +50,7 @@ def normalize_github_host(value: object) -> str | None:
     else:
         host = raw.split("/", 1)[0].rsplit("@", 1)[-1]
 
+    host = strip_github_host_port(host)
     return host or None
 
 
@@ -64,7 +76,7 @@ def parse_github_remote_url(value: object) -> GitHubRemote | None:
         host = parsed.netloc.rsplit("@", 1)[-1]
         path = parsed.path.lstrip("/")
 
-    host = host.strip().lower().rstrip("/")
+    host = strip_github_host_port(host.strip().lower().rstrip("/"))
     if not host or not path:
         return None
 

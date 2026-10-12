@@ -79,6 +79,50 @@ The same list also seeds local owner completion for `#gh:` prompts. SASE combine
 from active canonical GitHub project records named `gh_<owner>__<repo>`. This completion source is local-only; it does
 not run `gh` or contact GitHub until you accept an owner and ask for repository completion with `#gh:<owner>/`.
 
+## Environment variables
+
+### `SASE_GITHUB_CLONE_TIMEOUT`
+
+Overrides the `git clone` timeout used when sase-github clones a GitHub repository
+(onboarding add/create checkouts, `#gh` resolve, and SDD sidecar clones). The value is a
+positive number of seconds. When unset, the timeout is the greater of 600 seconds and
+SASE's shared network git timeout, which is sized for a full clone of a large
+repository.
+
+```bash
+SASE_GITHUB_CLONE_TIMEOUT=900 sase project add gh:owner/large-repo
+```
+
+Invalid or non-positive values are ignored and the default applies.
+
+Repository **creation** (`gh repo create`) uses a separate 120-second timeout. If that
+call times out, sase-github re-probes the repository and reports `exists` when GitHub
+already has it, so the onboarding journal can adopt the repo instead of treating the
+timeout as a hard failure.
+
+## Onboarding hooks
+
+`GitHubWorkspacePlugin` implements the New Project wizard's workspace-provider
+onboarding hooks for `workflow_type="gh"`:
+
+- **`ws_parse_repo_ref`** — Pure parse of `owner/repo`, `gh:owner/repo`, host-qualified
+  `host/owner/repo` for configured GitHub hosts, HTTPS URLs, and scp/ssh remotes.
+  Non-default hosts keep a host-qualified canonical ref so later clone and create calls
+  target that host.
+- **`ws_list_local_repo_candidates`** — Walks `~/projects/github/` without subprocesses,
+  matching `.git/config` origins (ports stripped) to the two-level `github.com` layout
+  or the three-level Enterprise layout. Trailing `_<N>` directory copies of a primary
+  origin are marked `numbered_copy`.
+- **`ws_probe_repo`** — Read-only `gh repo view` plus a raw `sase/sase.yml` read.
+- **`ws_describe_repo_creation`** — Cached gitignore, license, team, and org-membership
+  lists (team and membership requests use `gh api --paginate`).
+- **`ws_create_repo`** — Remote-only `gh repo create` with explicit visibility. Template
+  creates never pass `--add-readme`, `-g`, `-l`, or `-t` (gh rejects those with
+  `--template`); conflicting options fail before any subprocess. After create, the hook
+  verifies visibility, description, homepage, issues, and wiki.
+
+Tests fake `gh` through `subprocess.run`; they never create live repositories.
+
 ## Default Config
 
 sase-github contributes a `default_config.yml` via the `sase_config` entry point. This is merged into the sase config

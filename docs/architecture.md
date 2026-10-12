@@ -63,11 +63,11 @@ heavier hooks into the sibling `workspace/` subpackage:
 | `ws_get_change_label()`                | Returns `"PR"` for GitHub projects                                                |
 | `ws_resolve_ref()`                     | Resolves `#gh` references (see [Reference Resolution](#reference-resolution))     |
 | `ws_list_ref_namespaces()`             | Lists local `#gh:` owner candidates from active canonical projects and config     |
-| `ws_parse_repo_ref()`                | Purely parses `owner/repo`, `gh:` URLs, and scp/ssh spellings into canonical refs |
+| `ws_parse_repo_ref()`                | Purely parses `owner/repo`, host-qualified refs, URLs, and scp/ssh spellings |
 | `ws_list_local_repo_candidates()`    | Discovers `~/projects/github/` checkouts from `.git/config` origins (no network)  |
 | `ws_probe_repo()`                    | Read-only `gh repo view` probe: visibility, push rights, SASE-managed marker      |
-| `ws_describe_repo_creation()`        | `gh repo create` form with cached gitignore/license/team choice lists             |
-| `ws_create_repo()`                   | Remote-only `gh repo create` with explicit visibility and post-create verify       |
+| `ws_describe_repo_creation()`        | `gh repo create` form with cached, paginated gitignore/license/team lists     |
+| `ws_create_repo()`                   | Remote-only `gh repo create` with template-flag hygiene and post-create verify |
 | `ws_extract_change_identifier()`       | Extracts PR number from GitHub PR URLs                                            |
 | `ws_generate_submitted_check_script()` | Generates a bash script that checks if a PR is merged via `gh pr view`            |
 | `ws_supports_reviewer_comments()`      | Returns `False` for GitHub URLs (critique comments not supported)                 |
@@ -96,11 +96,12 @@ The `resolve_gh_ref()` function in `sase_github/workspace/refs.py` supports thre
 
 ### Mode 1: Repo Path (`user/project`)
 
-When the ref contains `/`, it's treated as a GitHub repo path:
+When the ref contains `/`, it's treated as a GitHub repo path (`user/project`, or
+host-qualified `host/user/project` for a configured GitHub host):
 
 - Derives workspace from `~/projects/github/<user>/<project>/` for `github.com`, or
-  `~/projects/github/<host>/<user>/<project>/` for other default hosts
-- Clones the repo from the default GitHub host if it doesn't exist (always tries SSH first, then falls back to HTTPS)
+  `~/projects/github/<host>/<user>/<project>/` for other hosts
+- Clones the repo from that host if it doesn't exist (always tries SSH first, then falls back to HTTPS)
 - Reuses an existing SASE ProjectSpec whose normalized `WORKSPACE_DIR` already points at that workspace
 - Otherwise creates a canonical project name from the repo identity, normally `gh_<user>__<project>`
 - Adds a deterministic suffix such as `-2` only if that canonical project name is already occupied by a different

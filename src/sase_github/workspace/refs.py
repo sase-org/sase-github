@@ -51,11 +51,27 @@ def _resolved_ref_for_record(
     )
 
 
-def _peek_repo_path_ref(user: str, project: str) -> ResolvedRef | None:
+def _repo_path_coords(gh_ref: str) -> tuple[str, str, str] | None:
+    """Return ``(host, owner, repo)`` for a 2-part or host-qualified path."""
+    from sase_github.config import get_default_github_host, get_github_hosts
+
+    parts = [part for part in gh_ref.strip("/").split("/") if part]
+    if len(parts) == 2 and all(parts):
+        return get_default_github_host(), parts[0], parts[1]
+    if len(parts) == 3 and all(parts):
+        host, owner, repo = parts
+        if host.casefold() in {item.casefold() for item in get_github_hosts()}:
+            return host, owner, repo
+    return None
+
+
+def _peek_repo_path_ref(
+    user: str, project: str, *, host: str | None = None
+) -> ResolvedRef | None:
     from sase_github.config import get_default_github_host
 
     base = projects_base()
-    github_host = get_default_github_host()
+    github_host = host or get_default_github_host()
     primary_workspace_dir = github_workspace_dir(user, project, host=github_host)
     if not os.path.isdir(primary_workspace_dir.rstrip("/")):
         return None
@@ -78,11 +94,13 @@ def _peek_repo_path_ref(user: str, project: str) -> ResolvedRef | None:
     )
 
 
-def _resolve_repo_path_ref(user: str, project: str) -> ResolvedRef:
+def _resolve_repo_path_ref(
+    user: str, project: str, *, host: str | None = None
+) -> ResolvedRef:
     from sase_github.config import get_default_github_host
 
     base = projects_base()
-    github_host = get_default_github_host()
+    github_host = host or get_default_github_host()
     primary_workspace_dir = github_workspace_dir(user, project, host=github_host)
     records = all_project_records(base)
     existing_record = find_project_record_for_workspace(
@@ -171,10 +189,11 @@ def _resolve_existing_named_ref(
 def peek_gh_ref(gh_ref: str) -> ResolvedRef | None:
     """Read-only variant of ``resolve_gh_ref``."""
     if "/" in gh_ref:
-        parts = gh_ref.strip("/").split("/")
-        if len(parts) != 2:
+        coords = _repo_path_coords(gh_ref)
+        if coords is None:
             return None
-        return _peek_repo_path_ref(*parts)
+        host, user, project = coords
+        return _peek_repo_path_ref(user, project, host=host)
 
     return _resolve_existing_named_ref(gh_ref, read_only=True, strict=False)
 
@@ -184,8 +203,9 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
 
     Three dispatch modes:
 
-    1. **Repo path** (contains ``/``): ``user/project`` → derive workspace
-       from ``~/projects/github/<user>/<project>/``.
+    1. **Repo path** (contains ``/``): ``user/project`` or host-qualified
+       ``host/user/project`` → derive workspace from
+       ``~/projects/github/<user>/<project>/`` (or the host-prefixed layout).
     2. **Project shorthand** (no ``/``, matching project dir): look up
        WORKSPACE_DIR from ``~/.sase/projects/<name>/<name>.sase``
        (with legacy ``.gp`` fallback).
@@ -195,12 +215,16 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
     Raises:
         ValueError: If the reference cannot be resolved.
     """
-    # --- Mode 1: repo path (user/project) ---
+    # --- Mode 1: repo path (user/project or host/user/project) ---
     if "/" in gh_ref:
-        parts = gh_ref.strip("/").split("/")
-        if len(parts) != 2:
-            raise ValueError(f"Invalid repo path '{gh_ref}': expected 'user/project'")
-        return _resolve_repo_path_ref(*parts)
+        coords = _repo_path_coords(gh_ref)
+        if coords is None:
+            raise ValueError(
+                f"Invalid repo path '{gh_ref}': expected 'user/project' "
+                "or 'host/user/project'"
+            )
+        host, user, project = coords
+        return _resolve_repo_path_ref(user, project, host=host)
 
     resolved = _resolve_existing_named_ref(gh_ref, read_only=False, strict=True)
     if resolved is not None:

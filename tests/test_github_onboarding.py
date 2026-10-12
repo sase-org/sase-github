@@ -17,6 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from sase_github.workspace.onboarding import (
+    CREATE_TIMEOUT_SECONDS,
     create_gh_repo,
     describe_gh_repo_creation,
     list_gh_local_repo_candidates,
@@ -115,9 +116,49 @@ class TestParseGhRepoRef:
 
         assert parsed is not None
         assert parsed.host == "ghe.example.test"
+        assert parsed.ref == "ghe.example.test/acme/widget"
         assert parsed.identity_key == "ghe.example.test/acme/widget"
         assert "ghe.example.test" in parsed.checkout_dir
         assert parsed.web_url == "https://ghe.example.test/acme/widget"
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_host_qualified_ref_round_trips(self) -> None:
+        with patch(
+            "sase_github.config.get_github_hosts",
+            return_value=["github.com", "ghe.example.test"],
+        ):
+            parsed = parse_gh_repo_ref("ghe.example.test/acme/widget")
+            again = parse_gh_repo_ref(parsed.ref) if parsed is not None else None
+
+        assert parsed is not None
+        assert parsed.ref == "ghe.example.test/acme/widget"
+        assert parsed.host == "ghe.example.test"
+        assert parsed.owner == "acme"
+        assert parsed.name == "widget"
+        assert again is not None
+        assert again.ref == parsed.ref
+        assert again.host == parsed.host
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_default_enterprise_host_keeps_bare_ref(self) -> None:
+        with (
+            patch(
+                "sase_github.config.get_github_hosts",
+                return_value=["ghe.example.test", "github.com"],
+            ),
+            patch(
+                "sase_github.config.get_default_github_host",
+                return_value="ghe.example.test",
+            ),
+        ):
+            enterprise = parse_gh_repo_ref("https://ghe.example.test/acme/widget")
+            public = parse_gh_repo_ref("https://github.com/sase-org/sase")
+
+        assert enterprise is not None
+        assert enterprise.ref == "acme/widget"
+        assert public is not None
+        assert public.ref == "github.com/sase-org/sase"
+        assert public.host == "github.com"
 
     @pytest.mark.usefixtures("_hosts")
     @pytest.mark.parametrize(
@@ -213,7 +254,7 @@ class TestListLocalRepoCandidates:
             result = list_gh_local_repo_candidates()
 
         assert [c.parsed.ref for c in result.entries] == [
-            "acme/widget",
+            "ghe.example.test/acme/widget",
             "sase-org/sase",
         ]
         by_ref = {c.parsed.ref: c for c in result.entries}
@@ -224,7 +265,7 @@ class TestListLocalRepoCandidates:
         assert by_ref["sase-org/sase"].parsed.identity_key == (
             "github.com/sase-org/sase"
         )
-        assert by_ref["acme/widget"].parsed.host == "ghe.example.test"
+        assert by_ref["ghe.example.test/acme/widget"].parsed.host == "ghe.example.test"
         assert all(c.numbered_copy is False for c in result.entries)
 
     def test_skips_mismatched_and_non_github_origins(self, tmp_path: Path) -> None:
@@ -249,7 +290,28 @@ class TestListLocalRepoCandidates:
 
         assert result.entries == ()
 
-    def test_marks_numbered_copies(self, tmp_path: Path) -> None:
+    def test_real_numbered_copy_matches_primary_origin(self, tmp_path: Path) -> None:
+        home = tmp_path / "home"
+        _write_checkout(
+            home, "bbugyi200", "CV_10", origin="git@github.com:bbugyi200/CV.git"
+        )
+
+        with (
+            patch.object(Path, "home", return_value=home),
+            patch(
+                "sase_github.config.get_default_github_host",
+                return_value="github.com",
+            ),
+        ):
+            result = list_gh_local_repo_candidates()
+
+        assert len(result.entries) == 1
+        assert result.entries[0].parsed.ref == "bbugyi200/CV"
+        assert result.entries[0].parsed.name == "CV"
+        assert result.entries[0].path.endswith("CV_10")
+        assert result.entries[0].numbered_copy is True
+
+    def test_literal_numbered_repo_name_is_not_a_copy(self, tmp_path: Path) -> None:
         home = tmp_path / "home"
         _write_checkout(
             home, "sase-org", "sase_2", origin="git@github.com:sase-org/sase_2.git"
@@ -266,7 +328,69 @@ class TestListLocalRepoCandidates:
 
         assert len(result.entries) == 1
         assert result.entries[0].parsed.ref == "sase-org/sase_2"
-        assert result.entries[0].numbered_copy is True
+        assert result.entries[0].numbered_copy is False
+
+    def test_two_level_layout_stays_github_com_when_default_is_enterprise(
+        self, tmp_path: Path
+    ) -> None:
+        home = tmp_path / "home"
+        _write_checkout(
+            home,
+            "sase-org",
+            "sase",
+            origin="git@github.com:sase-org/sase.git",
+        )
+        _write_checkout(
+            home,
+            "ghe.example.test",
+            "acme",
+            "widget",
+            origin="https://ghe.example.test/acme/widget.git",
+        )
+
+        with (
+            patch.object(Path, "home", return_value=home),
+            patch(
+                "sase_github.config.get_default_github_host",
+                return_value="ghe.example.test",
+            ),
+            patch(
+                "sase_github.config.get_github_hosts",
+                return_value=["ghe.example.test", "github.com"],
+            ),
+        ):
+            result = list_gh_local_repo_candidates()
+
+        by_key = {c.parsed.identity_key: c for c in result.entries}
+        assert set(by_key) == {
+            "github.com/sase-org/sase",
+            "ghe.example.test/acme/widget",
+        }
+        assert (
+            by_key["github.com/sase-org/sase"].parsed.ref == "github.com/sase-org/sase"
+        )
+        assert by_key["ghe.example.test/acme/widget"].parsed.ref == "acme/widget"
+
+    def test_discovers_ssh_origin_with_port(self, tmp_path: Path) -> None:
+        home = tmp_path / "home"
+        _write_checkout(
+            home,
+            "sase-org",
+            "sase",
+            origin="ssh://git@github.com:22/sase-org/sase.git",
+        )
+
+        with (
+            patch.object(Path, "home", return_value=home),
+            patch(
+                "sase_github.config.get_default_github_host",
+                return_value="github.com",
+            ),
+        ):
+            result = list_gh_local_repo_candidates()
+
+        assert len(result.entries) == 1
+        assert result.entries[0].parsed.identity_key == "github.com/sase-org/sase"
 
     def test_spawns_no_subprocess(self, tmp_path: Path) -> None:
         home = tmp_path / "home"
@@ -642,6 +766,8 @@ class TestDescribeGhRepoCreation:
         assert first == second
         gitignore_calls = [c for c in calls if "gitignore list" in c]
         assert len(gitignore_calls) == 1
+        assert any("--paginate" in c and "/teams" in c for c in calls)
+        assert any("--paginate" in c and "memberships" in c for c in calls)
 
 
 class TestCreateGhRepo:
@@ -669,9 +795,23 @@ class TestCreateGhRepo:
         assert "visibility" in result.message
         assert "public" in result.message
 
-    @pytest.mark.usefixtures("_hosts")
-    def test_argv_exact(self) -> None:
+    def _create_run(
+        self,
+        *,
+        view_payload: dict[str, object] | None = None,
+    ) -> tuple[list[list[str]], object]:
         seen: list[list[str]] = []
+        payload = {
+            "id": "R_new",
+            "visibility": "private",
+            "url": "https://github.com/sase-org/forge",
+            "hasIssuesEnabled": False,
+            "hasWikiEnabled": False,
+            "description": "Forge",
+            "homepageUrl": "https://example.test",
+        }
+        if view_payload is not None:
+            payload.update(view_payload)
 
         def _run(argv: list[str], **kwargs: object) -> object:
             seen.append(argv)
@@ -680,17 +820,15 @@ class TestCreateGhRepo:
                 assert kwargs["env"]["GH_HOST"] == "github.com"
                 assert kwargs["env"]["GH_PROMPT_DISABLED"] == "1"
                 return _completed(stdout="")
-            assert argv[:3] == ["gh", "repo", "view"]
-            return _completed(
-                stdout=json.dumps(
-                    {
-                        "id": "R_new",
-                        "visibility": "private",
-                        "url": "https://github.com/sase-org/forge",
-                    }
-                )
-            )
+            if argv[:3] == ["gh", "repo", "view"]:
+                return _completed(stdout=json.dumps(payload))
+            return _completed(stdout="", stderr="HTTP 404: Not Found", returncode=1)
 
+        return seen, _run
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_argv_without_template(self) -> None:
+        seen, _run = self._create_run()
         options = {
             "visibility": "private",
             "description": "Forge",
@@ -698,8 +836,6 @@ class TestCreateGhRepo:
             "add_readme": "true",
             "gitignore": "Python",
             "license": "mit",
-            "template": "sase-org/tpl",
-            "include_all_branches": "true",
             "team": "core",
             "issues": "false",
             "wiki": "false",
@@ -724,16 +860,81 @@ class TestCreateGhRepo:
             "Python",
             "-l",
             "mit",
-            "-p",
-            "sase-org/tpl",
-            "--include-all-branches",
             "-t",
             "core",
             "--disable-issues",
             "--disable-wiki",
         ]
+        assert "-p" not in seen[0]
         assert result.repo_id == "R_new"
         assert result.mismatches == ()
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_argv_with_template(self) -> None:
+        seen, _run = self._create_run()
+        options = {
+            "visibility": "private",
+            "description": "Forge",
+            "homepage": "https://example.test",
+            "template": "sase-org/tpl",
+            "include_all_branches": "true",
+            "issues": "false",
+            "wiki": "false",
+        }
+        with patch("sase_github.workspace.onboarding.subprocess.run", side_effect=_run):
+            result = create_gh_repo("sase-org/forge", options)
+
+        assert result is not None
+        assert result.status == "created"
+        assert seen[0] == [
+            "gh",
+            "repo",
+            "create",
+            "sase-org/forge",
+            "--private",
+            "-d",
+            "Forge",
+            "-h",
+            "https://example.test",
+            "-p",
+            "sase-org/tpl",
+            "--include-all-branches",
+            "--disable-issues",
+            "--disable-wiki",
+        ]
+        assert "--add-readme" not in seen[0]
+        assert "-g" not in seen[0]
+        assert "-l" not in seen[0]
+        assert "-t" not in seen[0]
+        assert result.mismatches == ()
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_template_conflicts_rejected_before_any_subprocess(self) -> None:
+        def _raise(*args: object, **kwargs: object) -> object:
+            raise AssertionError("must reject conflicts before any subprocess")
+
+        with patch(
+            "sase_github.workspace.onboarding.subprocess.run", side_effect=_raise
+        ):
+            result = create_gh_repo(
+                "sase-org/forge",
+                {
+                    "visibility": "private",
+                    "template": "sase-org/tpl",
+                    "add_readme": "true",
+                    "gitignore": "Python",
+                    "license": "mit",
+                    "team": "core",
+                },
+            )
+
+        assert result is not None
+        assert result.status == "failed"
+        assert "template" in result.message
+        assert "--add-readme" in result.message
+        assert "-g" in result.message
+        assert "-l" in result.message
+        assert "-t" in result.message
 
     @pytest.mark.usefixtures("_hosts")
     def test_reports_visibility_mismatch(self) -> None:
@@ -750,6 +951,117 @@ class TestCreateGhRepo:
         assert result is not None
         assert result.status == "created"
         assert result.mismatches == ("visibility: requested private, got public",)
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_reports_requested_setting_mismatches(self) -> None:
+        def _run(argv: list[str], **kwargs: object) -> object:
+            if argv[:3] == ["gh", "repo", "create"]:
+                return _completed(stdout="")
+            return _completed(
+                stdout=json.dumps(
+                    {
+                        "id": "R_new",
+                        "visibility": "private",
+                        "url": "https://github.com/sase-org/forge",
+                        "hasIssuesEnabled": True,
+                        "hasWikiEnabled": True,
+                        "description": "other",
+                        "homepageUrl": "https://other.test",
+                    }
+                )
+            )
+
+        with patch("sase_github.workspace.onboarding.subprocess.run", side_effect=_run):
+            result = create_gh_repo(
+                "sase-org/forge",
+                {
+                    "visibility": "private",
+                    "description": "Forge",
+                    "homepage": "https://example.test",
+                    "issues": "false",
+                    "wiki": "false",
+                },
+            )
+
+        assert result is not None
+        assert result.status == "created"
+        assert result.mismatches == (
+            "description: requested Forge, got other",
+            "homepage: requested https://example.test, got https://other.test",
+            "issues: requested false, got true",
+            "wiki: requested false, got true",
+        )
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_timeout_reprobes_and_reports_exists(self) -> None:
+        def _run(argv: list[str], **kwargs: object) -> object:
+            if argv[:3] == ["gh", "repo", "create"]:
+                raise subprocess.TimeoutExpired(argv, timeout=CREATE_TIMEOUT_SECONDS)
+            if argv[:3] == ["gh", "repo", "view"]:
+                return _completed(stdout=_view_payload())
+            return _completed(stdout="", stderr="HTTP 404: Not Found", returncode=1)
+
+        with patch("sase_github.workspace.onboarding.subprocess.run", side_effect=_run):
+            result = create_gh_repo("bobs-org/bob", {"visibility": "private"})
+
+        assert result is not None
+        assert result.status == "exists"
+        assert result.repo_id == "R_kgDOSsepkQ"
+        assert result.visibility == "private"
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_timeout_without_repo_is_failure(self) -> None:
+        def _run(argv: list[str], **kwargs: object) -> object:
+            if argv[:3] == ["gh", "repo", "create"]:
+                raise subprocess.TimeoutExpired(argv, timeout=CREATE_TIMEOUT_SECONDS)
+            return _completed(
+                stdout="",
+                stderr="GraphQL: Could not resolve to a Repository with the name 'o/r'.",
+                returncode=1,
+            )
+
+        with patch("sase_github.workspace.onboarding.subprocess.run", side_effect=_run):
+            result = create_gh_repo("sase-org/forge", {"visibility": "private"})
+
+        assert result is not None
+        assert result.status == "failed"
+        assert "timed out" in result.message
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_host_qualified_create_uses_parsed_owner_and_host(self) -> None:
+        seen: list[list[str]] = []
+
+        def _run(argv: list[str], **kwargs: object) -> object:
+            seen.append(argv)
+            if argv[:3] == ["gh", "repo", "create"]:
+                assert kwargs["env"]["GH_HOST"] == "ghe.example.test"
+                return _completed(stdout="")
+            return _completed(
+                stdout=json.dumps(
+                    {
+                        "id": "R_ent",
+                        "visibility": "private",
+                        "url": "https://ghe.example.test/acme/widget",
+                    }
+                )
+            )
+
+        with (
+            patch(
+                "sase_github.config.get_github_hosts",
+                return_value=["github.com", "ghe.example.test"],
+            ),
+            patch("sase_github.workspace.onboarding.subprocess.run", side_effect=_run),
+        ):
+            result = create_gh_repo(
+                "ghe.example.test/acme/widget", {"visibility": "private"}
+            )
+
+        assert result is not None
+        assert result.status == "created"
+        assert seen[0][:4] == ["gh", "repo", "create", "acme/widget"]
+        assert result.parsed.host == "ghe.example.test"
+        assert result.parsed.ref == "ghe.example.test/acme/widget"
 
     @pytest.mark.usefixtures("_hosts")
     def test_exists_reprobes_and_reports_exists(self) -> None:

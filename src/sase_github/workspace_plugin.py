@@ -143,16 +143,16 @@ class GitHubWorkspacePlugin:
 
         if scheme != "gh":
             return None
-        parts = ref.split("/")
-        if len(parts) != 2 or any(not part for part in parts):
+        parsed = parse_gh_repo_ref(ref)
+        if parsed is None:
             raise RuntimeError(
-                f"Invalid GitHub external repo ref {ref!r}; expected owner/repo"
+                f"Invalid GitHub external repo ref {ref!r}; "
+                "expected owner/repo or host/owner/repo"
             )
-        owner, repo = parts
-        clone_gh_repo(owner, repo, dest_dir)
+        clone_gh_repo(parsed.owner, parsed.name, dest_dir, host=parsed.host)
         default_branch = get_default_branch(dest_dir).removeprefix("origin/")
         return ExternalRepoCloneResult(
-            canonical_name=f"gh:{owner}/{repo}",
+            canonical_name=f"gh:{parsed.ref}",
             dest_dir=dest_dir,
             default_branch=default_branch,
         )
