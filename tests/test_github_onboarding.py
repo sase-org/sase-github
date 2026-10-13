@@ -937,6 +937,92 @@ class TestCreateGhRepo:
         assert "-t" in result.message
 
     @pytest.mark.usefixtures("_hosts")
+    def test_template_plus_add_readme_false_is_not_a_conflict(self) -> None:
+        seen, _run = self._create_run()
+        options = {
+            "visibility": "private",
+            "template": "sase-org/tpl",
+            "add_readme": "false",
+        }
+        with patch("sase_github.workspace.onboarding.subprocess.run", side_effect=_run):
+            result = create_gh_repo("sase-org/forge", options)
+
+        assert result is not None
+        assert result.status == "created"
+        assert seen[0] == [
+            "gh",
+            "repo",
+            "create",
+            "sase-org/forge",
+            "--private",
+            "-p",
+            "sase-org/tpl",
+        ]
+        assert "--add-readme" not in seen[0]
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_no_template_add_readme_false_omits_flag(self) -> None:
+        seen, _run = self._create_run()
+        options = {"visibility": "private", "add_readme": "false"}
+        with patch("sase_github.workspace.onboarding.subprocess.run", side_effect=_run):
+            result = create_gh_repo("sase-org/forge", options)
+
+        assert result is not None
+        assert result.status == "created"
+        assert "--add-readme" not in seen[0]
+        assert seen[0] == [
+            "gh",
+            "repo",
+            "create",
+            "sase-org/forge",
+            "--private",
+        ]
+
+    @pytest.mark.usefixtures("_hosts")
+    def test_no_template_missing_add_readme_emits_flag(self) -> None:
+        seen, _run = self._create_run()
+        with patch("sase_github.workspace.onboarding.subprocess.run", side_effect=_run):
+            result = create_gh_repo("sase-org/forge", {"visibility": "private"})
+
+        assert result is not None
+        assert result.status == "created"
+        assert seen[0] == [
+            "gh",
+            "repo",
+            "create",
+            "sase-org/forge",
+            "--private",
+            "--add-readme",
+        ]
+
+    @pytest.mark.usefixtures("_hosts")
+    @pytest.mark.parametrize(
+        ("options", "flag"),
+        [
+            ({"add_readme": "true"}, "--add-readme"),
+            ({"gitignore": "Python"}, "-g"),
+            ({"license": "mit"}, "-l"),
+            ({"team": "core"}, "-t"),
+        ],
+    )
+    def test_each_template_conflict_flag_rejected_alone(
+        self, options: dict[str, str], flag: str
+    ) -> None:
+        def _raise(*args: object, **kwargs: object) -> object:
+            raise AssertionError("must reject conflicts before any subprocess")
+
+        payload = {"visibility": "private", "template": "sase-org/tpl", **options}
+        with patch(
+            "sase_github.workspace.onboarding.subprocess.run", side_effect=_raise
+        ):
+            result = create_gh_repo("sase-org/forge", payload)
+
+        assert result is not None
+        assert result.status == "failed"
+        assert "template" in result.message
+        assert flag in result.message
+
+    @pytest.mark.usefixtures("_hosts")
     def test_reports_visibility_mismatch(self) -> None:
         def _run(argv: list[str], **kwargs: object) -> object:
             if argv[:3] == ["gh", "repo", "create"]:
