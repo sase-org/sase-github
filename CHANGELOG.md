@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.25](https://github.com/sase-org/sase-github/compare/v0.2.24...v0.2.25) (2026-11-13)
+
+
+### Bug Fixes
+
+* bind owner/repo #gh refs as line inputs ([5f85ceb](https://github.com/sase-org/sase-github/commit/5f85ceb951ca1bc0359175c44e96275c4e1e0ae6))
+
 ## [0.2.24](https://github.com/sase-org/sase-github/compare/v0.2.23...v0.2.24) (2026-10-12)
 
 
