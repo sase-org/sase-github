@@ -2300,6 +2300,13 @@ class TestResolveGhRef:
         with pytest.raises(ValueError, match="expected 'user/project'"):
             resolve_gh_ref("a/b/c")
 
+    @patch("sase_github.workspace.refs.clone_gh_repo")
+    def test_repo_path_rejects_unsafe_components(self, mock_clone: MagicMock) -> None:
+        for gh_ref in ("../widget", "acme/..", "acme/re po", "acme/$(id)"):
+            with pytest.raises(ValueError, match="expected 'user/project'"):
+                resolve_gh_ref(gh_ref)
+        mock_clone.assert_not_called()
+
     @patch("sase_github.workspace.refs.get_default_branch", return_value="origin/main")
     def test_host_qualified_ref_uses_enterprise_layout(
         self, mock_branch: MagicMock
@@ -2389,6 +2396,14 @@ class TestPeekGhRef:
 
     def test_does_not_claim_other_workflow_types(self) -> None:
         assert GitHubWorkspacePlugin().ws_peek_ref("alice/myrepo", "git") is None
+
+    @patch("sase_github.workspace.refs.clone_gh_repo")
+    def test_peek_repo_path_rejects_unsafe_components(
+        self, mock_clone: MagicMock
+    ) -> None:
+        for gh_ref in ("../widget", "acme/..", "acme/re po", "acme/$(id)"):
+            assert peek_gh_ref(gh_ref) is None
+        mock_clone.assert_not_called()
 
 
 class TestWsResolveRef:

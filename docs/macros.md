@@ -14,7 +14,7 @@ the target branch, and captures diffs.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `gh_ref` | word | (required) | Repo path (`user/project`), project name, or Patch name |
+| `gh_ref` | line | (required) | Repo path (`user/project`), project name, or Patch name |
 | `n` | int | `null` | Workspace number override (auto-assigned if null) |
 | `release` | bool | `true` | Whether to release the workspace when done |
 | `workflow_label` | word | `null` | Optional label for the workflow |

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,13 @@ from sase_github.workspace.remotes import clone_gh_repo
 
 if TYPE_CHECKING:
     from sase.core.project_lifecycle_wire import ProjectRecordWire
+
+# GitHub owner/repo charset. `.` and `..` still match, so callers reject them.
+_GITHUB_NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
+
+
+def _is_github_name(value: str) -> bool:
+    return value not in {".", ".."} and _GITHUB_NAME_RE.fullmatch(value) is not None
 
 
 def _resolved_ref_for_record(
@@ -57,11 +65,15 @@ def _repo_path_coords(gh_ref: str) -> tuple[str, str, str] | None:
 
     parts = [part for part in gh_ref.strip("/").split("/") if part]
     if len(parts) == 2 and all(parts):
-        return get_default_github_host(), parts[0], parts[1]
+        owner, repo = parts
+        if _is_github_name(owner) and _is_github_name(repo):
+            return get_default_github_host(), owner, repo
+        return None
     if len(parts) == 3 and all(parts):
         host, owner, repo = parts
         if host.casefold() in {item.casefold() for item in get_github_hosts()}:
-            return host, owner, repo
+            if _is_github_name(owner) and _is_github_name(repo):
+                return host, owner, repo
     return None
 
 
@@ -221,7 +233,8 @@ def resolve_gh_ref(gh_ref: str) -> ResolvedRef:
         if coords is None:
             raise ValueError(
                 f"Invalid repo path '{gh_ref}': expected 'user/project' "
-                "or 'host/user/project'"
+                "or 'host/user/project' with owner and repo matching "
+                "[A-Za-z0-9._-]+ excluding '.' and '..'"
             )
         host, user, project = coords
         return _resolve_repo_path_ref(user, project, host=host)

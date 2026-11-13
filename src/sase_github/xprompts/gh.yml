@@ -3,7 +3,7 @@ tags: vcs, rollover
 
 input:
   - name: gh_ref
-    type: word
+    type: line
     description: GitHub repo, PR, branch, or Patch reference to check out.
   - name: n
     type: int
