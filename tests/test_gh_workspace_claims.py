@@ -1002,8 +1002,9 @@ def test_gh_release_step_releases_owned_claim_and_occupant(
 
 
 def test_gh_release_step_skips_on_handoff(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    staged_handoff = pytest.importorskip("sase.agent.staged_handoff")
     runner_pid = os.getppid()
     project_file = _write_project_file(
         tmp_path,
@@ -1022,7 +1023,16 @@ def test_gh_release_step_skips_on_handoff(
     )
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
-    (artifacts / ".sase_monitor_pending").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("SASE_AGENT", "1")
+    staged_handoff.write_staged_handoff(
+        staged_handoff.build_plan_staged_record(
+            plan_file="/tmp/plan.md",
+            original_file="/tmp/plan.md",
+            dirty_obligations_at_stage=[],
+            created_at="2026-10-28T12:00:00Z",
+        ),
+        artifacts_dir=str(artifacts),
+    )
 
     with (
         _isolate_ledger(tmp_path),

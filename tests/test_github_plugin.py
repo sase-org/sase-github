@@ -4,6 +4,8 @@ Verifies that :class:`GitHubPlugin` works correctly when routed through
 :class:`VCSPluginManager`.
 """
 
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pluggy
@@ -15,6 +17,48 @@ from sase.vcs_provider._plugin_manager import VCSPluginManager
 from sase_github.plugin import GitHubPlugin
 
 _MOCK_TARGET = "sase.vcs_provider._command_runner.subprocess.run"
+_ORIGIN_URL = "git@github.com:user/repo.git"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_sase_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SASE_HOME", str(tmp_path / "sase-home"))
+    monkeypatch.delenv("SASE_LINKED_REPOS_JSON", raising=False)
+
+
+def _identity_probe(cmd: list[str], kwargs: dict[str, Any]) -> MagicMock | None:
+    """Answer require_push_identity's checkout probes."""
+    if cmd == ["git", "rev-parse", "--show-toplevel"]:
+        return MagicMock(returncode=0, stdout=f"{kwargs['cwd']}\n", stderr="")
+    if cmd[:3] == ["git", "remote", "get-url"]:
+        return MagicMock(returncode=0, stdout=f"{_ORIGIN_URL}\n", stderr="")
+    return None
+
+
+def _plugin_cmds(mock_run: MagicMock) -> list[list[str]]:
+    return [
+        call.args[0]
+        for call in mock_run.call_args_list
+        if _identity_probe(call.args[0], call.kwargs) is None
+    ]
+
+
+def _mail_fake(*, pr_exists: bool, push: MagicMock | None = None) -> Any:
+    def side_effect(cmd: list[str], **kwargs: Any) -> MagicMock:
+        probe = _identity_probe(cmd, kwargs)
+        if probe is not None:
+            return probe
+        if cmd[:2] == ["git", "push"]:
+            return push or MagicMock(returncode=0, stdout="", stderr="")
+        if cmd[:3] == ["gh", "pr", "view"]:
+            if pr_exists:
+                return MagicMock(returncode=0, stdout="42\n", stderr="")
+            return MagicMock(returncode=1, stdout="", stderr="no PR")
+        if cmd[:3] == ["gh", "pr", "create"]:
+            return MagicMock(returncode=0, stdout="", stderr="")
+        return MagicMock(returncode=99, stdout="", stderr=f"unexpected command: {cmd}")
+
+    return side_effect
 
 
 @pytest.fixture
@@ -269,27 +313,16 @@ def test_plugin_mail_creates_pr(
     mock_run: MagicMock, github_provider: VCSPluginManager
 ) -> None:
     """mail pushes and creates a PR when none exists."""
-    # First call: git push (success)
-    # Second call: gh pr view (fail = no existing PR)
-    # Third call: gh pr create (success)
-    mock_run.side_effect = [
-        MagicMock(returncode=0, stdout="", stderr=""),
-        MagicMock(returncode=1, stdout="", stderr="no PR"),
-        MagicMock(returncode=0, stdout="", stderr=""),
-    ]
+    mock_run.side_effect = _mail_fake(pr_exists=False)
     success, error = github_provider.mail("feature-branch", "/workspace")
 
     assert success is True
     assert error is None
-    assert mock_run.call_count == 3
-    assert mock_run.call_args_list[0][0][0] == [
-        "git",
-        "push",
-        "-u",
-        "origin",
-        "feature-branch",
+    assert _plugin_cmds(mock_run) == [
+        ["git", "push", "-u", "origin", "feature-branch"],
+        ["gh", "pr", "view", "--json", "number", "-q", ".number"],
+        ["gh", "pr", "create", "--fill"],
     ]
-    assert mock_run.call_args_list[2][0][0] == ["gh", "pr", "create", "--fill"]
 
 
 @patch(_MOCK_TARGET)
@@ -297,15 +330,15 @@ def test_plugin_mail_existing_pr(
     mock_run: MagicMock, github_provider: VCSPluginManager
 ) -> None:
     """mail pushes but skips PR creation when PR already exists."""
-    mock_run.side_effect = [
-        MagicMock(returncode=0, stdout="", stderr=""),  # git push
-        MagicMock(returncode=0, stdout="42\n", stderr=""),  # gh pr view (PR exists)
-    ]
+    mock_run.side_effect = _mail_fake(pr_exists=True)
     success, error = github_provider.mail("feature-branch", "/workspace")
 
     assert success is True
     assert error is None
-    assert mock_run.call_count == 2
+    assert _plugin_cmds(mock_run) == [
+        ["git", "push", "-u", "origin", "feature-branch"],
+        ["gh", "pr", "view", "--json", "number", "-q", ".number"],
+    ]
 
 
 # === Tests for prepare_description_for_reword ===
@@ -381,42 +414,34 @@ def test_direct_get_pr_number_no_pr(mock_run: MagicMock) -> None:
 @patch(_MOCK_TARGET)
 def test_direct_mail_push_and_create_pr(mock_run: MagicMock) -> None:
     """Test GitHubPlugin.vcs_mail pushes and creates PR when none exists."""
-    mock_run.side_effect = [
-        MagicMock(returncode=0, stdout="", stderr=""),  # git push
-        MagicMock(returncode=1, stdout="", stderr="no PR"),  # gh pr view (no PR)
-        MagicMock(returncode=0, stdout="", stderr=""),  # gh pr create
-    ]
+    mock_run.side_effect = _mail_fake(pr_exists=False)
 
     plugin = GitHubPlugin()
     success, error = plugin.vcs_mail("feature-branch", "/workspace")
 
     assert success is True
     assert error is None
-    assert mock_run.call_count == 3
-    assert mock_run.call_args_list[0][0][0] == [
-        "git",
-        "push",
-        "-u",
-        "origin",
-        "feature-branch",
+    assert _plugin_cmds(mock_run) == [
+        ["git", "push", "-u", "origin", "feature-branch"],
+        ["gh", "pr", "view", "--json", "number", "-q", ".number"],
+        ["gh", "pr", "create", "--fill"],
     ]
-    assert mock_run.call_args_list[2][0][0] == ["gh", "pr", "create", "--fill"]
 
 
 @patch(_MOCK_TARGET)
 def test_direct_mail_push_existing_pr(mock_run: MagicMock) -> None:
     """Test GitHubPlugin.vcs_mail just pushes when PR already exists."""
-    mock_run.side_effect = [
-        MagicMock(returncode=0, stdout="", stderr=""),  # git push
-        MagicMock(returncode=0, stdout="42\n", stderr=""),  # gh pr view (PR exists)
-    ]
+    mock_run.side_effect = _mail_fake(pr_exists=True)
 
     plugin = GitHubPlugin()
     success, error = plugin.vcs_mail("feature-branch", "/workspace")
 
     assert success is True
     assert error is None
-    assert mock_run.call_count == 2
+    assert _plugin_cmds(mock_run) == [
+        ["git", "push", "-u", "origin", "feature-branch"],
+        ["gh", "pr", "view", "--json", "number", "-q", ".number"],
+    ]
 
 
 # === Tests for commit dispatch hooks ===
@@ -499,6 +524,9 @@ def test_vcs_create_pull_request_success(
 
     def _side_effect(*args, **kwargs):
         cmd = args[0]
+        probe = _identity_probe(cmd, kwargs)
+        if probe is not None:
+            return probe
         if cmd == ["git", "diff", "--cached", "--quiet"]:
             return MagicMock(returncode=1, stdout="", stderr="")
         if cmd[:3] == ["gh", "pr", "create"]:
@@ -517,9 +545,10 @@ def test_vcs_create_pull_request_success(
     assert ok is True
     assert result == "https://github.com/user/repo/pull/99"
     # Verify branch creation
-    assert mock_run.call_args_list[0][0][0] == ["git", "checkout", "-b", "feat-x"]
+    cmds = _plugin_cmds(mock_run)
+    assert cmds[0] == ["git", "checkout", "-b", "feat-x"]
     # Verify gh pr create uses message for title/body
-    pr_cmd = mock_run.call_args_list[-1][0][0]
+    pr_cmd = cmds[-1]
     assert pr_cmd[:3] == ["gh", "pr", "create"]
 
 
@@ -528,19 +557,26 @@ def test_vcs_create_pull_request_pr_create_fails(
     mock_run: MagicMock, github_provider: VCSPluginManager
 ) -> None:
     """Returns error when gh pr create fails."""
-    mock_run.side_effect = [
-        MagicMock(returncode=0, stdout="", stderr=""),  # checkout -b
-        MagicMock(returncode=0, stdout="", stderr=""),  # add
-        MagicMock(returncode=0, stdout="", stderr=""),  # commit
-        MagicMock(returncode=0, stdout="", stderr=""),  # push -u
-        MagicMock(returncode=1, stdout="", stderr="error creating PR"),  # gh pr create
-    ]
+    def _side_effect(*args, **kwargs):
+        cmd = args[0]
+        probe = _identity_probe(cmd, kwargs)
+        if probe is not None:
+            return probe
+        if cmd == ["git", "diff", "--cached", "--quiet"]:
+            return MagicMock(returncode=1, stdout="", stderr="")
+        if cmd[:3] == ["gh", "pr", "create"]:
+            return MagicMock(returncode=1, stdout="", stderr="error creating PR")
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    mock_run.side_effect = _side_effect
     ok, err = github_provider.create_pull_request(
         {"name": "feat-x", "message": "test", "files": []}, "/ws"
     )
 
     assert ok is False
     assert isinstance(err, str)
+    assert "gh pr create failed" in err
+    assert "error creating PR" in err
 
 
 # === Direct plugin method tests (commit dispatch) ===
@@ -611,6 +647,9 @@ def test_vcs_create_pull_request_with_pr_title_prefix(
 
     def _side_effect(*args, **kwargs):
         cmd = args[0]
+        probe = _identity_probe(cmd, kwargs)
+        if probe is not None:
+            return probe
         if cmd == ["git", "diff", "--cached", "--quiet"]:
             return MagicMock(returncode=1, stdout="", stderr="")
         if cmd[:3] == ["gh", "pr", "create"]:
@@ -634,6 +673,9 @@ def test_vcs_create_pull_request_with_pr_title_prefix(
     )
 
     assert ok is True
+    cmds = _plugin_cmds(mock_run)
+    assert cmds[0] == ["git", "checkout", "-b", "feat-x"]
+    assert cmds[-1][:3] == ["gh", "pr", "create"]
     # Title should have the prefix
     title_idx = captured_pr_cmd.index("--title") + 1
     assert captured_pr_cmd[title_idx] == "[myproj] Add feature"
@@ -645,8 +687,9 @@ def test_vcs_create_pull_request_with_pr_title_prefix(
 @patch(_MOCK_TARGET)
 def test_direct_mail_push_fails(mock_run: MagicMock) -> None:
     """Test GitHubPlugin.vcs_mail when push fails."""
-    mock_run.return_value = MagicMock(
-        returncode=1, stdout="", stderr="permission denied"
+    mock_run.side_effect = _mail_fake(
+        pr_exists=False,
+        push=MagicMock(returncode=1, stdout="", stderr="permission denied"),
     )
 
     plugin = GitHubPlugin()
@@ -655,3 +698,5 @@ def test_direct_mail_push_fails(mock_run: MagicMock) -> None:
     assert success is False
     assert error is not None
     assert "git push failed" in error
+    assert "permission denied" in error
+    assert not any(cmd[:1] == ["gh"] for cmd in _plugin_cmds(mock_run))
